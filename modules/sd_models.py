@@ -853,11 +853,11 @@ def load_diffuser(checkpoint_info=None, already_loaded_state_dict=None, timer=No
                 diffusers_load_config['custom_pipeline'] = 'latent_consistency_txt2img'
 
         if 'ONNX' in shared.opts.diffusers_pipeline:
-            from modules.onnx import OnnxAutoPipeline
+            from modules.onnx import OnnxAutoPipelineForText2Image
             if os.path.isdir(checkpoint_info.path):
-                sd_model = OnnxAutoPipeline.from_pretrained(checkpoint_info.path)
+                sd_model = OnnxAutoPipelineForText2Image.from_pretrained(checkpoint_info.path)
             else:
-                sd_model = OnnxAutoPipeline.from_single_file(checkpoint_info.path)
+                sd_model = OnnxAutoPipelineForText2Image.from_single_file(checkpoint_info.path)
 
         if sd_model is None and os.path.isdir(checkpoint_info.path):
             err1 = None
