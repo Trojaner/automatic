@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_gradio_call
 
-from modules import sd_hijack, sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, ui_loadsave, ui_train, ui_models
+from modules import sd_hijack, sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, ui_loadsave, ui_train, ui_models, ui_interrogate
 from modules.ui_components import FormRow, FormGroup, ToolButton, FormHTML
 from modules.paths import script_path, data_path
 from modules.shared import opts, cmd_opts
@@ -263,7 +263,7 @@ def create_toprow(is_img2img):
                 pause = gr.Button('Pause', elem_id=f"{id_part}_pause")
                 pause.click(fn=lambda: modules.shared.state.pause(), _js='checkPaused', inputs=[], outputs=[])
             with gr.Row(elem_id=f"{id_part}_tools"):
-                button_paste = gr.Button(value='Restore', variant='secondary', elem_id="paste") # symbols.paste
+                button_paste = gr.Button(value='Restore', variant='secondary', elem_id=f"{id_part}_paste") # symbols.paste
                 button_clear = gr.Button(value='Clear', variant='secondary', elem_id=f"{id_part}_clear_prompt_btn") # symbols.clear
                 button_extra = gr.Button(value='Networks', variant='secondary', elem_id=f"{id_part}_extra_networks_btn") # symbols.networks
                 button_clear.click(fn=lambda *x: ['', ''], inputs=[prompt, negative_prompt], outputs=[prompt, negative_prompt], show_progress=False)
@@ -635,7 +635,6 @@ def create_ui(startup_timer = None):
                         img2img_batch_inpaint_mask_dir = gr.Textbox(label="Inpaint batch mask directory", **modules.shared.hide_dirs, elem_id="img2img_batch_inpaint_mask_dir")
 
                     img2img_tabs = [tab_img2img, tab_sketch, tab_inpaint, tab_inpaint_color, tab_inpaint_upload, tab_batch]
-
                     for i, tab in enumerate(img2img_tabs):
                         tab.select(fn=lambda tabnum=i: tabnum, inputs=[], outputs=[img2img_selected_tab])
 
@@ -903,6 +902,11 @@ def create_ui(startup_timer = None):
         ui_models.create_ui()
         timer.startup.record("ui-models")
 
+    with gr.Blocks(analytics_enabled=False) as interrogate_interface:
+        ui_interrogate.create_ui()
+        timer.startup.record("ui-interrogate")
+
+
     def create_setting_component(key, is_quicksettings=False):
         def fun():
             return opts.data[key] if key in opts.data else opts.data_labels[key].default
@@ -1102,11 +1106,12 @@ def create_ui(startup_timer = None):
     timer.startup.record("ui-settings")
 
     interfaces = [
-        (txt2img_interface, "From Text", "txt2img"),
-        (img2img_interface, "From Image", "img2img"),
-        (extras_interface, "Process Image", "process"),
+        (txt2img_interface, "Text", "txt2img"),
+        (img2img_interface, "Image", "img2img"),
+        (extras_interface, "Process", "process"),
         (train_interface, "Train", "train"),
         (models_interface, "Models", "models"),
+        (interrogate_interface, "Interrogate", "interrogate"),
     ]
     interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "System", "system")]
@@ -1152,9 +1157,9 @@ def create_ui(startup_timer = None):
             inputs=components,
             outputs=[text_settings, result],
         )
-        defaults_submit.click(fn=lambda: modules.shared.restore_defaults(restart=True), _js="restart_reload")
-        restart_submit.click(fn=lambda: modules.shared.restart_server(restart=True), _js="restart_reload")
-        shutdown_submit.click(fn=lambda: modules.shared.restart_server(restart=False), _js="restart_reload")
+        defaults_submit.click(fn=lambda: modules.shared.restore_defaults(restart=True), _js="restartReload")
+        restart_submit.click(fn=lambda: modules.shared.restart_server(restart=True), _js="restartReload")
+        shutdown_submit.click(fn=lambda: modules.shared.restart_server(restart=False), _js="restartReload")
 
         for _i, k, _item in quicksettings_list:
             component = component_dict[k]
@@ -1189,6 +1194,20 @@ def create_ui(startup_timer = None):
             outputs=[component_dict['sd_vae'], text_settings],
         )
 
+        def reference_submit(model):
+            from modules import modelloader
+            loaded = modelloader.load_reference(model)
+            if loaded:
+                return model if loaded else opts.sd_model_checkpoint
+            return loaded
+
+        button_set_reference = gr.Button('Change reference', elem_id='change_reference', visible=False)
+        button_set_reference.click(
+            fn=reference_submit,
+            _js="function(v){ return desiredCheckpointName; }",
+            inputs=[component_dict['sd_model_checkpoint']],
+            outputs=[component_dict['sd_model_checkpoint']],
+        )
         component_keys = [k for k in opts.data_labels.keys() if k in component_dict]
 
         def get_settings_values():

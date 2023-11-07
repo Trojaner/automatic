@@ -4,7 +4,6 @@
   --font: 'NotoSans';
   --font-mono: 'ui-monospace', 'Consolas', monospace;
   --font-size: 16px;
-  --left-column: 500px;
   --primary-50: #7dffff;
   --primary-100: #72e8e8;
   --primary-200: #67d2d2;
@@ -33,9 +32,6 @@
   --radius-lg: 4px;
   --line-sm: 1.2em;
   --line-md: 1.4em;
-  --text-sm: 12px;
-  --text-md: 14px;
-  --text-lg: 15px;
 }
 
 html { font-size: var(--font-size); }
@@ -125,7 +121,6 @@ svg.feather.feather-image, .feather .feather-image { display: none }
 
 #extras_upscale { margin-top: 10px }
 #txt2img_progress_row > div { min-width: var(--left-column); max-width: var(--left-column); }
-#txt2img_results, #img2img_results, #extras_results { background-color: var(--background-color); padding: 0; }
 #txt2img_settings { min-width: var(--left-column); max-width: var(--left-column); background-color: #111111; padding-top: 16px; }
 #pnginfo_html2_info { margin-top: -18px; background-color: var(--input-background-fill); padding: var(--input-padding) }
 #txt2img_styles_row, #img2img_styles_row { margin-top: -6px; z-index: 200; }
@@ -177,7 +172,7 @@ svg.feather.feather-image, .feather .feather-image { display: none }
   --button-cancel-border-color: #dc2626;
   --button-cancel-text-color-hover: var(--button-cancel-text-color);
   --button-cancel-text-color: white;
-  --button-large-padding: 2px 10px;
+  --button-large-padding: 2px 6px;
   --button-large-radius: var(--radius-lg);
   --button-large-text-size: var(--text-lg);
   --button-large-text-weight: 400;
@@ -297,20 +292,10 @@ svg.feather.feather-image, .feather .feather-image { display: none }
   --size-9: 64px;
   --slider_color: None;
   --slider-color: ;
-  --spacing-xxs: 1px;
-  --spacing-xs: 2px;
-  --spacing-sm: 3px;
-  --spacing-lg: 4px;
-  --spacing-xl: 5px;
-  --spacing-xxl: 6px;
   --stat-background-fill: linear-gradient(to right, var(--primary-400), var(--primary-600));
   --table-border-color: var(--neutral-700);
   --table-even-background-fill: #222222;
   --table-odd-background-fill: #333333;
   --table-radius: var(--radius-lg);
   --table-row-focus: var(--color-accent-soft);
-  --text-lg: 16px;
-  --text-xs: 10px;
-  --text-xxl: 26px;
-  --text-xxs: 9px;
 }

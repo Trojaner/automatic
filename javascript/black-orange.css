@@ -4,7 +4,6 @@
   --font: 'NotoSans';
   --font-mono: 'ui-monospace', 'Consolas', monospace;
   --font-size: 16px;
-  --left-column: 500px;
   --highlight-color: #ce6400;
   --inactive-color: #4e1400;
   --background-color: #000000;
@@ -38,9 +37,6 @@
   --spacing-xxl: 6px;
   --line-sm: 1.2em;
   --line-md: 1.4em;
-  --text-sm: 12px;
-  --text-md: 14px;
-  --text-lg: 15px;
 }
 
 html { font-size: var(--font-size); }
@@ -127,7 +123,6 @@ svg.feather.feather-image, .feather .feather-image { display: none }
 
 #extras_upscale { margin-top: 10px }
 #txt2img_progress_row > div { min-width: var(--left-column); max-width: var(--left-column); }
-#txt2img_results, #img2img_results, #extras_results { background-color: var(--background-color); padding: 0; }
 #txt2img_settings { min-width: var(--left-column); max-width: var(--left-column); background-color: #111111; padding-top: 16px; }
 #pnginfo_html2_info { margin-top: -18px; background-color: var(--input-background-fill); padding: var(--input-padding) }
 .gradio-button.tool { filter: hue-rotate(180deg) saturate(0.5); }
@@ -243,20 +238,11 @@ svg.feather.feather-image, .feather .feather-image { display: none }
   --neutral-800: #333333;
   --neutral-900: #111827;
   --neutral-950: #0b0f19;
-  --spacing-xxs: 1px;
-  --spacing-xs: 2px;
-  --spacing-sm: 4px;
-  --spacing-lg: 6px;
-  --spacing-xl: 8px;
   --radius-xxs: 0;
   --radius-xs: 0;
   --radius-md: 0;
   --radius-xl: 0;
   --radius-xxl: 0;
-  --text-xxs: 9px;
-  --text-xs: 10px;
-  --text-xl: 22px;
-  --text-xxl: 26px;
   --body-text-size: var(--text-md);
   --body-text-weight: 400;
   --embed-radius: var(--radius-lg);
@@ -310,7 +296,7 @@ svg.feather.feather-image, .feather .feather-image { display: none }
   --prose-header-text-weight: 600;
   --slider-color: ;
   --table-radius: var(--radius-lg);
-  --button-large-padding: 2px 10px;
+  --button-large-padding: 2px 6px;
   --button-large-radius: var(--radius-lg);
   --button-large-text-size: var(--text-lg);
   --button-large-text-weight: 400;

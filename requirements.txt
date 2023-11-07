@@ -46,12 +46,13 @@ dctorch
 httpx==0.24.1
 compel==2.0.2
 torchsde==0.2.6
+clip-interrogator==0.6.0
 antlr4-python3-runtime==4.9.3
 requests==2.31.0
 tqdm==4.66.1
 accelerate==0.20.3
 opencv-python-headless==4.7.0.72
-diffusers==0.21.4
+diffusers==0.22.0
 einops==0.4.1
 gradio==3.43.2
 huggingface_hub==0.18.0

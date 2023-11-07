@@ -185,7 +185,7 @@ table.settings-value-table td { padding: 0.4em; border: 1px solid #ccc; max-widt
 .extra-networks .tab-nav > button { margin-right: 0; height: 24px; padding: 2px 4px 2px 4px; }
 .extra-networks .buttons { position: absolute; right: 0; margin: -4px; background: var(--background-color); }
 .extra-networks .buttons > button { margin-left: -0.4em; height: 1.4em; color: var(--primary-300) !important; }
-.extra-networks .custom-button { width: 120px; width: 100%; background: none; justify-content: left; text-align: left; padding: 2px 8px 2px 16px; text-indent: -8px; box-shadow: none; line-break: auto; }
+.extra-networks .custom-button { width: 120px; width: 100%; background: none; justify-content: left; text-align: left; padding: 3px 3px 3px 12px; text-indent: -6px; box-shadow: none; line-break: auto; }
 .extra-networks .custom-button:hover { background: var(--button-primary-background-fill) }
 .extra-networks-tab { padding: 0 !important; }
 .extra-network-subdirs { background: var(--input-background-fill); overflow-x: hidden; overflow-y: auto; min-width: max(15%, 120px); padding-top: 0.5em; margin-top: -4px !important; }
@@ -199,7 +199,7 @@ table.settings-value-table td { padding: 0.4em; border: 1px solid #ccc; max-widt
 .extra-network-cards .card:hover .preview { box-shadow: none; filter: grayscale(100%); }
 .extra-network-cards .card:hover .overlay { background: rgba(0, 0, 0, 0.40); }
 .extra-network-cards .card .overlay .tags { display: none; overflow-wrap: break-word; }
-.extra-network-cards .card .overlay .tag { padding: 3px; background: rgba(70, 70, 70, 0.60); font-size: var(--text-lg); cursor: pointer; display: inline-block; margin-bottom: 4px; }
+.extra-network-cards .card .overlay .tag { padding: 2px; margin: 2px; background: rgba(70, 70, 70, 0.60); font-size: var(--text-md); cursor: pointer; display: inline-block; }
 .extra-network-cards .card .actions > span { padding: 4px; }
 .extra-network-cards .card .actions > span:hover { color: var(--highlight-color); }
 .extra-network-cards .card:hover .actions { display: block; }
@@ -220,7 +220,7 @@ table.settings-value-table td { padding: 0.4em; border: 1px solid #ccc; max-widt
 
 /* specific elements */
 #modelmerger_interp_description { margin-top: 1em; margin-bottom: 1em; }
-#scripts_alwayson_txt2img, #scripts_alwayson_img2img { display: grid; padding: 0 }
+#scripts_alwayson_txt2img, #scripts_alwayson_img2img { padding: 0 }
 #scripts_alwayson_txt2img > .label-wrap, #scripts_alwayson_img2img > .label-wrap { background: var(--input-background-fill); padding: 0; margin: 0; border-radius: var(--radius-lg); }
 #scripts_alwayson_txt2img > .label-wrap > span, #scripts_alwayson_img2img > .label-wrap > span { padding: var(--spacing-xxl); }
 #scripts_alwayson_txt2img div { max-width: var(--left-column); }
@@ -263,3 +263,42 @@ table.settings-value-table td { padding: 0.4em; border: 1px solid #ccc; max-widt
 @keyframes move { from { background-position-x: 0, -40px; } to { background-position-x: 0, 40px; } }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes color { from { filter: hue-rotate(0deg) } to { filter: hue-rotate(360deg) } }
+
+:root, .light, .dark {
+  --text-xxs: 9px;
+  --text-xs: 10px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 15px;
+  --text-xl: 16px;
+  --text-xxl: 17px;
+  --spacing-xxs: 1px;
+  --spacing-xs: 2px;
+  --spacing-sm: 3px;
+  --spacing-lg: 4px;
+  --spacing-xl: 5px;
+  --spacing-xxl: 6px; 
+}
+
+
+/* Apply different styles for devices with coarse pointers dependant on screen resolution */
+@media (hover: none) and (pointer: coarse) {
+
+  /* Screens 400px and smaller */
+  @media (max-width: 425px) {
+    :root, .light, .dark { --left-column: 100%; }
+    #settings {display: flex;gap: var(--layout-gap);flex-wrap: wrap;flex-direction: row;}
+    #txt2img_results, #img2img_results, #extras_results { background-color: var(--background-color); padding: 0; min-width: calc(min(320px, 100%)) !important;}
+    .gradio-slider input[type="number"] { width: 4em; font-size: 0.8rem; height: 16px; text-align: center; }
+  }
+
+  /* Screens 400px and larger up to 1080px  */
+  @media (max-width: 1080px) and (min-width:425px) {
+    :root, .light, .dark { --left-column: 39%; }
+    #scripts_alwayson_txt2img div { max-width: 99%; }
+    #settings {display: flex;gap: var(--layout-gap);flex-wrap: wrap;flex-direction: row;}
+    #txt2img_results, #img2img_results, #extras_results { background-color: var(--background-color); padding: 0;}
+    .gradio-slider input[type="number"] { width: 4em; font-size: 0.8rem; height: 16px; text-align: center; }
+  }  
+  
+}
