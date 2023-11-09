@@ -26,7 +26,7 @@ def list_crossattention():
 
 def get_pipelines():
     import diffusers
-    from modules.onnx import OnnxAutoPipelineForText2Image, OnnxAutoPipelineForImage2Image
+    from modules import onnx
     from installer import log
     pipelines = {
         'Autodetect': None,
@@ -38,8 +38,11 @@ def get_pipelines():
         'Stable Diffusion XL Img2Img': getattr(diffusers, 'StableDiffusionXLImg2ImgPipeline', None),
         'Stable Diffusion XL Inpaint': getattr(diffusers, 'StableDiffusionXLInpaintPipeline', None),
         'Stable Diffusion XL Instruct': getattr(diffusers, 'StableDiffusionXLInstructPix2PixPipeline', None),
-        'ONNX Stable Diffusion (or XL)': OnnxAutoPipelineForText2Image,
-        'ONNX Stable Diffusion (or XL) Img2Img': OnnxAutoPipelineForImage2Image,
+        'ONNX Stable Diffusion': getattr(onnx, 'OnnxStableDiffusionPipeline', None),
+        'ONNX Stable Diffusion Img2Img': getattr(onnx, 'OnnxStableDiffusionImg2ImgPipeline', None),
+        'ONNX Stable Diffusion Inpaint': getattr(onnx, 'OnnxStableDiffusionInpaintPipeline', None),
+        'ONNX Stable Diffusion XL': getattr(onnx, 'OnnxStableDiffusionXLPipeline', None),
+        'ONNX Stable Diffusion XL Img2Img': getattr(onnx, 'OnnxStableDiffusionXLImg2ImgPipeline', None),
         'Custom Diffusers Pipeline': getattr(diffusers, 'DiffusionPipeline', None),
         # 'Test': getattr(diffusers, 'TestPipeline', None),
         # 'Kandinsky V1', 'Kandinsky V2', 'DeepFloyd IF', 'Shap-E', 'Kandinsky V1 Img2Img', 'Kandinsky V2 Img2Img', 'DeepFloyd IF Img2Img', 'Shap-E Img2Img',
