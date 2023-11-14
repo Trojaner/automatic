@@ -1,6 +1,6 @@
 # Change Log for SD.Next
 
-## Update for 2023-11-10
+## Update for 2023-11-13
 
 - **Diffusers**  
   - **LCM** support for any *SD 1.5* or *SD-XL* model!  
@@ -10,30 +10,43 @@
     - set **sampler** to **LCM**  
     - set number of steps to some low number, for SD-XL 6-7 steps is normally sufficient  
       note: LCM scheduler does not support steps higher than 50
-    - set cfg to 1 or 2  
+    - set CFG to 1-2  
   - Add `cli/lcm-convert.py` script to convert any SD 1.5 or SD-XL model to LCM model  
     by baking in LORA and uploading to Huggingface, thanks @Disty0  
+  - Support for [Stable Fast](https://github.com/chengzeyi/stable-fast) model compile on *Windows/Linux/WSL2* with *CUDA*  
+    See [Wiki:Benchmark](https://github.com/vladmandic/automatic/wiki/Benchmark) for details and comparisment  
+    of different backends, precision modes, advanced settings and compile modes  
+    hint: **100+ it/s** on RTX4090 with no special tweaks  
   - Add additional pipeline types for manual model loads when loading from `safetensors`  
   - Updated logic for calculating **steps** when using base/hires/refiner workflows  
   - Safe model offloading for non-standard models  
   - Fix **DPM SDE** scheduler  
+  - Better support for SD 1.5 **inpainting** models  
+  - Add support for **OpenAI Consistency decoder VAE**
+  - Enhance prompt parsing with long prompts and support for *BREAK* keyword  
+    Change-in-behavior: new line in prompt now means *BREAK*  
+  - Add alternative Lora loading algorithm, triggered if `SD_LORA_DIFFUSERS` is set  
   - Update to `diffusers==0.23.0`  
 - **Extra networks**  
   - Use multi-threading for 5x load speedup  
+  - Better Lora trigger words support  
 - **General**:  
   - Reworked parser when pasting previously generated images/prompts  
     includes all `txt2img`, `img2img` and `override` params  
+  - Reworked **model compile**
   - Add refiner options to XYZ Grid  
   - Support custom upscalers in subfolders  
   - Support `--ckpt none` to skip loading a model  
 - **Fixes**  
+  - Fix `params.txt` saved before actual image
   - Fix inpaint  
   - Fix manual grid image save  
   - Fix img2img init image save  
   - More uniform models paths  
   - Safe scripts callback execution  
-  - Improve extension compatibility  
-  - Improve BF16 support  
+  - Improved extension compatibility  
+  - Improved BF16 support  
+  - Match previews for reference models with downloaded models
 
 ## Update for 2023-11-06
 

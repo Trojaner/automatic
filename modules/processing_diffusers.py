@@ -101,7 +101,7 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             model.vae.to(devices.device)
         latents.to(model.vae.device)
 
-        upcast = (model.vae.dtype == torch.float16) and model.vae.config.force_upcast and hasattr(model, 'upcast_vae')
+        upcast = (model.vae.dtype == torch.float16) and getattr(model.vae.config, 'force_upcast', False) and hasattr(model, 'upcast_vae')
         if upcast: # this is done by diffusers automatically if output_type != 'latent'
             model.upcast_vae()
             latents = latents.to(next(iter(model.vae.post_quant_conv.parameters())).dtype)
@@ -186,6 +186,8 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             negative_prompts = [negative_prompts]
         while len(negative_prompts) < len(prompts):
             negative_prompts.append(negative_prompts[-1])
+        while len(prompts) < len(negative_prompts):
+            prompts.append(prompts[-1])
         if type(prompts_2) is str:
             prompts_2 = [prompts_2]
         if type(prompts_2) is list:
@@ -226,7 +228,6 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         return task_args
 
     def set_pipeline_args(model, prompts: list, negative_prompts: list, prompts_2: typing.Optional[list]=None, negative_prompts_2: typing.Optional[list]=None, desc:str='', **kwargs):
-
         if hasattr(model, "set_progress_bar_config"):
             model.set_progress_bar_config(bar_format='Progress {rate_fmt}{postfix} {bar} {percentage:3.0f}% {n_fmt}/{total_fmt} {elapsed} {remaining} ' + '\x1b[38;5;71m' + desc, ncols=80, colour='#327fba')
         args = {}
@@ -411,8 +412,12 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         return max(2, int(steps))
 
     # pipeline type is set earlier in processing, but check for sanity
-    if sd_models.get_diffusers_task(shared.sd_model) != sd_models.DiffusersTaskType.TEXT_2_IMAGE and len(getattr(p, 'init_images' ,[])) == 0: # reset pipeline
-        shared.sd_model = sd_models.set_diffuser_pipe(shared.sd_model, sd_models.DiffusersTaskType.TEXT_2_IMAGE)
+    if sd_models.get_diffusers_task(shared.sd_model) != sd_models.DiffusersTaskType.TEXT_2_IMAGE and len(getattr(p, 'init_images' ,[])) == 0:
+        shared.sd_model = sd_models.set_diffuser_pipe(shared.sd_model, sd_models.DiffusersTaskType.TEXT_2_IMAGE) # reset pipeline
+    if hasattr(shared.sd_model, 'unet') and hasattr(shared.sd_model.unet, 'config') and hasattr(shared.sd_model.unet.config, 'in_channels') and shared.sd_model.unet.config.in_channels == 9:
+        shared.sd_model = sd_models.set_diffuser_pipe(shared.sd_model, sd_models.DiffusersTaskType.INPAINTING) # force pipeline
+        if len(getattr(p, 'init_images' ,[])) == 0:
+            p.init_images = [TF.to_pil_image(torch.rand((3, p.height, p.width)))]
     base_args = set_pipeline_args(
         model=shared.sd_model,
         prompts=prompts,
