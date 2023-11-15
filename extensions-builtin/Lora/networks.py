@@ -14,7 +14,7 @@ import network_norm
 import lora_convert
 import torch
 import diffusers.models.lora
-from modules import shared, devices, sd_models, errors, scripts, sd_hijack
+from modules import shared, devices, sd_models, sd_models_compile, errors, scripts, sd_hijack
 
 
 debug = os.environ.get('SD_LORA_DEBUG', None)
@@ -77,8 +77,8 @@ def assign_network_names_to_compvis_modules(sd_model):
 def load_diffusers(name, network_on_disk):
     t0 = time.time()
     cached = lora_cache.get(name, None)
-    if debug:
-        shared.log.debug(f'LoRA load: name={name} file={network_on_disk.filename} {"cached" if cached else ""}')
+    # if debug:
+    shared.log.debug(f'LoRA load: name={name} file={network_on_disk.filename} type=diffusers {"cached" if cached else ""}')
     if cached is not None:
         return cached
     if shared.backend != shared.Backend.DIFFUSERS:
@@ -160,7 +160,9 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
         net = None
         if network_on_disk is not None:
             try:
-                if shared.backend == shared.Backend.DIFFUSERS and os.environ.get('SD_LORA_DIFFUSERS', None):
+                if shared.backend == shared.Backend.DIFFUSERS and (os.environ.get('SD_LORA_DIFFUSERS', None)
+                                                                   or getattr(network_on_disk, 'shorthash', None) == 'aaebf6360f7d' # lcm sd15
+                                                                   or getattr(network_on_disk, 'shorthash', None) == '3d18b05e4f56'): # lcm sdxl
                     net = load_diffusers(name, network_on_disk)
                 else:
                     net = load_network(name, network_on_disk)
@@ -191,7 +193,7 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
 
     if recompile_model:
         shared.log.info("LoRA recompiling model")
-        sd_models.compile_diffusers(shared.sd_model)
+        sd_models_compile.compile_diffusers(shared.sd_model)
 
 
 def network_restore_weights_from_backup(self: Union[torch.nn.Conv2d, torch.nn.Linear, torch.nn.GroupNorm, torch.nn.LayerNorm, torch.nn.MultiheadAttention, diffusers.models.lora.LoRACompatibleLinear, diffusers.models.lora.LoRACompatibleConv]):
