@@ -31,20 +31,29 @@
   - Use multi-threading for 5x load speedup  
   - Better Lora trigger words support  
   - Auto refresh styles on change  
-- **General**:  
+- **General**  
+  - Support for **Torch 2.1.1** with CUDA 12.1 or CUDA 11.8  
+  - Configurable location for HF cache folder  
+    Default is standard `~/.cache/huggingface/hub`  
   - Reworked parser when pasting previously generated images/prompts  
     includes all `txt2img`, `img2img` and `override` params  
   - Reworked **model compile**
-  - Add refiner options to XYZ Grid  
-  - Add option to create only subimages in XYZ grid, thanks @midcoastal
   - Support custom upscalers in subfolders  
   - Add additional image info when loading image in process tab  
+  - Better file locking when sharing config and/or models between multiple instances  
+  - Handle custom API endpoints when using auth  
+  - Show logged in user in log when accessing via UI and/or API  
   - Support `--ckpt none` to skip loading a model  
+- **XYZ grid**
+  - Add refiner options to XYZ Grid  
+  - Add option to create only subgrids in XYZ grid, thanks @midcoastal
+  - Allow custom font, background and text color in settings
 - **Fixes**  
   - Fix `params.txt` saved before actual image
   - Fix inpaint  
   - Fix manual grid image save  
   - Fix img2img init image save  
+  - Fix upscale in txt2img for batch counts when no hires is used  
   - More uniform models paths  
   - Safe scripts callback execution  
   - Improved extension compatibility  

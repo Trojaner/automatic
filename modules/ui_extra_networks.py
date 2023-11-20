@@ -203,7 +203,7 @@ class ExtraNetworksPage:
                     os.remove(f)
                 elif img.width > 1024 or img.height > 1024 or os.path.getsize(f) > 65536:
                     img = img.convert('RGB')
-                    img.thumbnail((512, 512), Image.HAMMING)
+                    img.thumbnail((512, 512), Image.Resampling.HAMMING)
                     img.save(fn, quality=50)
                     img.close()
                     created += 1
@@ -253,8 +253,10 @@ class ExtraNetworksPage:
                 subdir = tgt[len(parentdir):].replace("\\", "/")
                 while subdir.startswith("/"):
                     subdir = subdir[1:]
-                if not self.is_empty(tgt):
+                # if not self.is_empty(tgt):
+                if not subdir.startswith("."):
                     subdirs[subdir] = 1
+        debug(f"Extra networks: page='{self.name}' subfolders={list(subdirs)}")
         subdirs = OrderedDict(sorted(subdirs.items()))
         if shared.backend == shared.Backend.DIFFUSERS and self.name == 'model':
             subdirs['Reference'] = 1
@@ -279,7 +281,7 @@ class ExtraNetworksPage:
             self.html = f"<div id='{tabname}_{self_name_id}_subdirs' class='extra-network-subdirs'>{subdirs_html}</div><div id='{tabname}_{self_name_id}_cards' class='extra-network-cards'>{self.html}</div>"
         else:
             return ''
-        shared.log.debug(f"Extra networks: page='{self.name}' items={len(self.items)} subdirs={len(subdirs)} tab={tabname} dirs={self.allowed_directories_for_previews()} list={self.list_time:.2f} desc={self.desc_time:.2f} info={self.info_time:.2f}")
+        shared.log.debug(f"Extra networks: page='{self.name}' items={len(self.items)} subfolders={len(subdirs)} tab={tabname} folders={self.allowed_directories_for_previews()} list={self.list_time:.2f} desc={self.desc_time:.2f} info={self.info_time:.2f}")
         if len(self.missing_thumbs) > 0:
             threading.Thread(target=self.create_thumb).start()
         return self.html
@@ -576,7 +578,7 @@ def create_ui(container, button_parent, tabname, skip_indexing = False):
         fn_delete_img(image)
         if image.width > 512 or image.height > 512:
             image = image.convert('RGB')
-            image.thumbnail((512, 512), Image.HAMMING)
+            image.thumbnail((512, 512), Image.Resampling.HAMMING)
         try:
             image.save(ui.last_item.local_preview, quality=50)
             shared.log.debug(f'Extra network save image: item={ui.last_item.name} filename="{ui.last_item.local_preview}"')

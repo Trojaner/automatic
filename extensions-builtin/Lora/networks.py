@@ -146,11 +146,16 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
             for i, name in enumerate(names):
                 if shared.compiled_model_state.lora_model[i] != f"{name}:{te_multipliers[i] if te_multipliers else 1.0}":
                     recompile_model = True
+                    shared.compiled_model_state.lora_model = []
                     break
         else:
             recompile_model = True
-        shared.compiled_model_state.lora_model = []
+            shared.compiled_model_state.lora_model = []
     if recompile_model:
+        if not shared.opts.openvino_disable_model_caching:
+            shared.log.warning("LoRa: Disabling OpenVINO model caching")
+            shared.opts.openvino_disable_model_caching = True
+        shared.compiled_model_state.lora_compile = True
         sd_models.unload_model_weights(op='model')
         shared.opts.cuda_compile = False
         sd_models.reload_model_weights(op='model')
@@ -160,14 +165,17 @@ def load_networks(names, te_multipliers=None, unet_multipliers=None, dyn_dims=No
         net = None
         if network_on_disk is not None:
             try:
+                if recompile_model:
+                    shared.compiled_model_state.lora_model.append(f"{name}:{te_multipliers[i] if te_multipliers else 1.0}")
                 if shared.backend == shared.Backend.DIFFUSERS and (os.environ.get('SD_LORA_DIFFUSERS', None)
                                                                    or getattr(network_on_disk, 'shorthash', None) == 'aaebf6360f7d' # lcm sd15
-                                                                   or getattr(network_on_disk, 'shorthash', None) == '3d18b05e4f56'): # lcm sdxl
+                                                                   or getattr(network_on_disk, 'shorthash', None) == '3d18b05e4f56' # lcm sdxl
+                                                                   or (shared.opts.cuda_compile and shared.opts.cuda_compile_backend == "openvino_fx")):
                     net = load_diffusers(name, network_on_disk)
                 else:
                     net = load_network(name, network_on_disk)
             except Exception as e:
-                shared.log.error(f"LoRA load failed: file={network_on_disk.filename}")
+                shared.log.error(f"LoRA load failed: file={network_on_disk.filename} {e}")
                 if debug:
                     errors.display(e, f"LoRA load failed file={network_on_disk.filename}")
                 continue
