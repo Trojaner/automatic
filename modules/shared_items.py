@@ -26,7 +26,7 @@ def list_crossattention():
 
 def get_pipelines():
     import diffusers
-    from modules import onnx
+    import modules.onnx # pylint: disable=unused-import
     from installer import log
     pipelines = { # note: not all pipelines can be used manually as they require prior pipeline next to decoder pipeline
         'Autodetect': None,
@@ -45,11 +45,11 @@ def get_pipelines():
         'Kandinsky 2.1': getattr(diffusers, 'KandinskyPipeline', None),
         'Kandinsky 2.2': getattr(diffusers, 'KandinskyV22Pipeline', None),
         'DeepFloyd IF': getattr(diffusers, 'IFPipeline', None),
-        'ONNX Stable Diffusion': getattr(onnx, 'OnnxStableDiffusionPipeline', None),
-        'ONNX Stable Diffusion Img2Img': getattr(onnx, 'OnnxStableDiffusionImg2ImgPipeline', None),
-        'ONNX Stable Diffusion Inpaint': getattr(onnx, 'OnnxStableDiffusionInpaintPipeline', None),
-        'ONNX Stable Diffusion XL': getattr(onnx, 'OnnxStableDiffusionXLPipeline', None),
-        'ONNX Stable Diffusion XL Img2Img': getattr(onnx, 'OnnxStableDiffusionXLImg2ImgPipeline', None),
+        'ONNX Stable Diffusion': getattr(diffusers, 'OnnxStableDiffusionPipeline', None),
+        'ONNX Stable Diffusion Img2Img': getattr(diffusers, 'OnnxStableDiffusionImg2ImgPipeline', None),
+        'ONNX Stable Diffusion Inpaint': getattr(diffusers, 'OnnxStableDiffusionInpaintPipeline', None),
+        'ONNX Stable Diffusion XL': getattr(diffusers, 'OnnxStableDiffusionXLPipeline', None),
+        'ONNX Stable Diffusion XL Img2Img': getattr(diffusers, 'OnnxStableDiffusionXLImg2ImgPipeline', None),
         'Custom Diffusers Pipeline': getattr(diffusers, 'DiffusionPipeline', None),
         # Segmind SSD-1B, Segmind Tiny
     }
