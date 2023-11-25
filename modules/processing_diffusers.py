@@ -17,6 +17,7 @@ import modules.errors as errors
 from modules.processing import StableDiffusionProcessing, create_random_tensors
 import modules.prompt_parser_diffusers as prompt_parser_diffusers
 from modules.sd_hijack_hypertile import hypertile_set
+from modules.processing_correction import correction_callback
 
 
 def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_prompts):
@@ -74,7 +75,8 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
                     raise AssertionError('Interrupted...')
                 time.sleep(0.1)
 
-    def diffusers_callback(_pipe, step: int, _timestep: int, kwargs: dict):
+    def diffusers_callback(_pipe, step: int, timestep: int, kwargs: dict):
+        latents = correction_callback(p, timestep, kwargs)
         latents = kwargs['latents']
         shared.state.sampling_step = step
         shared.state.current_latent = latents
@@ -217,10 +219,8 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
                 p.mask = TF.to_pil_image(torch.ones_like(TF.to_tensor(p.init_images[0]))).convert("L")
             width = 8 * math.ceil(p.init_images[0].width / 8)
             height = 8 * math.ceil(p.init_images[0].height / 8)
-
             # option-1: use images as inputs
             task_args = {"image": p.init_images, "mask_image": p.mask, "strength": p.denoising_strength, "height": height, "width": width}
-
             """ # option-2: preprocess images into latents using diffusers
             vae_scale_factor = 2 ** (len(model.vae.config.block_out_channels) - 1)
             image_processor = diffusers.image_processor.VaeImageProcessor(vae_scale_factor=vae_scale_factor)
@@ -229,7 +229,6 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             mask_image = mask_processor.preprocess(p.mask, width=width, height=height)
             task_args = {"image": p.init_images, "mask_image": p.mask, "strength": p.denoising_strength, "height": height, "width": width}
             """
-
             """ # option-2: manually assemble masked image latents
             masked_image_latents = []
             mask_image = TF.to_tensor(p.mask)
@@ -240,7 +239,6 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             masked_image_latents = torch.stack(masked_image_latents, dim=0).to(shared.device)
             task_args = {"image": p.init_images, "mask_image": mask_image, "masked_image_latents": masked_image_latents, "strength": p.denoising_strength, "height": height, "width": width}
             """
-
         if model.__class__.__name__ == 'LatentConsistencyModelPipeline' and hasattr(p, 'init_images') and len(p.init_images) > 0:
             init_latents = [vae_encode(image, model=shared.sd_model, full_quality=p.full_quality).squeeze(dim=0) for image in p.init_images]
             init_latent = torch.stack(init_latents, dim=0).to(shared.device)
@@ -318,8 +316,8 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
                 args[arg] = task_kwargs[arg]
             else:
                 pass
-                # shared.log.debug(f'Diffuser not supported: pipeline={pipeline.__class__.__name__} task={sd_models.get_diffusers_task(model)} arg={arg}')
-        # shared.log.debug(f'Diffuser pipeline: {model.__class__.__name__} possible={possible}')
+        for k, v in getattr(p, 'task_args', {}).items():
+            args[k] = v
         hypertile_set(p, hr=len(getattr(p, 'init_images', [])))
         clean = args.copy()
         clean.pop('callback', None)
@@ -334,6 +332,8 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             clean['mask_image'] = type(clean['mask_image'])
         if 'masked_image_latents' in clean:
             clean['masked_image_latents'] = type(clean['masked_image_latents'])
+        if 'ip_adapter_image' in clean:
+            clean['ip_adapter_image'] = type(clean['ip_adapter_image'])
         if 'prompt' in clean:
             clean['prompt'] = len(clean['prompt'])
         if 'negative_prompt' in clean:

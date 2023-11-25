@@ -1,6 +1,27 @@
 # Change Log for SD.Next
 
-## Update for 2023-11-14
+## Update for 2023-11-24
+
+Note: Release pending `diffusers==0.24`
+
+- **Diffusers**
+  - **IP adapter**
+    - Lightweight implementation of T2I adapters which can guide generation towards specific image style
+    - Supports most T2I models, not limited to SD
+  - **HDR latent control**, based on [article](https://huggingface.co/blog/TimothyAlexisVass/explaining-the-sdxl-latent-space#long-prompts-at-high-guidance-scales-becoming-possible)  
+    - In *Advanced* params
+    - Allows control of *latent clamping*, *color centering* and *range maximimization*
+    - Supported by *XYZ grid*
+- **General**
+  - log level defaults to info for console and debug for log file
+  - better prompt display in process tab
+  - increase maximum lora cache values
+  - fix for python 3.9 compatibility
+
+## Update for 2023-11-23
+
+New release, primarily focused around three major new features: full **LCM** support, completely new **Model Merge** functionality and **Stable-fast** compile support  
+Also included are several other improvements and large number of hotfixes - see full changelog for details  
 
 - **Diffusers**  
   - **LCM** support for any *SD 1.5* or *SD-XL* model!  
@@ -16,9 +37,10 @@
   - Support for [Stable Fast](https://github.com/chengzeyi/stable-fast) model compile on *Windows/Linux/WSL2* with *CUDA*  
     See [Wiki:Benchmark](https://github.com/vladmandic/automatic/wiki/Benchmark) for details and comparisment  
     of different backends, precision modes, advanced settings and compile modes  
-    *Hint*: **100+ it/s** is possible on *RTX4090* with no special tweaks  
+    *Hint*: **70+ it/s** is possible on *RTX4090* with no special tweaks  
   - Add additional pipeline types for manual model loads when loading from `safetensors`  
   - Updated logic for calculating **steps** when using base/hires/refiner workflows  
+  - Improve **model offloading** for both model and sequential cpu offload when dealing with meta tensors
   - Safe model offloading for non-standard models  
   - Fix **DPM SDE** scheduler  
   - Better support for SD 1.5 **inpainting** models  
@@ -26,12 +48,24 @@
   - Enhance prompt parsing with long prompts and support for *BREAK* keyword  
     Change-in-behavior: new line in prompt now means *BREAK*  
   - Add alternative Lora loading algorithm, triggered if `SD_LORA_DIFFUSERS` is set  
-  - Update to `diffusers==0.23.0`  
+- **Models**
+  - **Model merge**
+    - completely redesigned, now based on best-of-class `meh` by @s1dlx  
+      and heavily modified for additional functionality and fully integrated by @AI-Casanova (thanks!)  
+    - merge SD or SD-XL models using *simple merge* (12 methods),  
+      using one of *presets* (20 built-in presets) or custom block merge values  
+    - merge with ReBasin permuatations and/or clipping protection  
+    - fully multithreaded for fastest merge possible  
+  - **Model update**  
+    - under UI -> Models - Update  
+    - scan existing models for updated metadata on CivitAI and  
+      provide download functionality for models with available  
 - **Extra networks**  
   - Use multi-threading for 5x load speedup  
   - Better Lora trigger words support  
   - Auto refresh styles on change  
 - **General**  
+  - Many **mobile UI** optimizations, thanks @iDeNoh
   - Support for **Torch 2.1.1** with CUDA 12.1 or CUDA 11.8  
   - Configurable location for HF cache folder  
     Default is standard `~/.cache/huggingface/hub`  

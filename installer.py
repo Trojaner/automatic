@@ -103,12 +103,6 @@ def setup_logging():
         fh.doRollover()
         log_rolled = True
 
-    global first_call # pylint: disable=global-statement
-    if first_call:
-        log_size = os.path.getsize(log_file) if os.path.exists(log_file) else 0
-        log.debug(f'Logger: file={log_file} level={level} size={log_size} mode={"append" if not log_rolled else "create"}')
-        first_call = False
-
     fh.formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s')
     fh.setLevel(logging.DEBUG)
     log.addHandler(fh)
@@ -121,9 +115,16 @@ def setup_logging():
     # overrides
     logging.getLogger("urllib3").setLevel(logging.ERROR)
     logging.getLogger("httpx").setLevel(logging.ERROR)
+    logging.getLogger("diffusers").setLevel(logging.ERROR)
+    logging.getLogger("torch").setLevel(logging.ERROR)
     logging.getLogger("ControlNet").handlers = log.handlers
     logging.getLogger("lycoris").handlers = log.handlers
     # logging.getLogger("DeepSpeed").handlers = log.handlers
+
+def get_logfile():
+    log_size = os.path.getsize(log_file) if os.path.exists(log_file) else 0
+    log.info(f'Logger: file="{log_file}" level={logging.getLevelName(logging.DEBUG if args.debug else logging.INFO)} size={log_size} mode={"append" if not log_rolled else "create"}')
+    return log_file
 
 
 def custom_excepthook(exc_type, exc_value, exc_traceback):
@@ -190,7 +191,7 @@ def installed(package, friendly: str = None, reload = False, quiet = False):
                         if args.experimental:
                             log.warning(f"Package allowing experimental: {p[0]} {package_version} required {p[1]}")
                         else:
-                            log.warning(f"Package wrong version: {p[0]} {package_version} required {p[1]}")
+                            log.warning(f"Package version mismatch: {p[0]} {package_version} required {p[1]}")
             else:
                 if not quiet:
                     log.debug(f"Package not found: {p[0]}")
@@ -421,7 +422,6 @@ def check_torch():
             log.debug(f'ROCm hipconfig failed: {e}')
             rocm_ver = None
         if rocm_ver in {"5.7"}:
-            # install torch nightly via torchvision to avoid wasting bandwidth when torchvision depends on torch from yesterday
             torch_command = os.environ.get('TORCH_COMMAND', f'torch torchvision --pre --index-url https://download.pytorch.org/whl/nightly/rocm{rocm_ver}')
         elif rocm_ver in {"5.5", "5.6"}:
             torch_command = os.environ.get('TORCH_COMMAND', f'torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm{rocm_ver}')
@@ -443,39 +443,10 @@ def check_torch():
             ipex_pip = 'https://github.com/Nuullll/intel-extension-for-pytorch/releases/download/v2.0.110%2Bxpu-master%2Bdll-bundle/intel_extension_for_pytorch-2.0.110+gitc6ea20b-cp310-cp310-win_amd64.whl'
             torch_command = os.environ.get('TORCH_COMMAND', f'{pytorch_pip} {torchvision_pip} {ipex_pip}')
         install('openvino', 'openvino', ignore=True)
-        install('onnxruntime-openvino', 'onnxruntime-openvino', ignore=True) # TODO numpy version conflicts with tensorflow and doesn't support Python 3.11
+        install('onnxruntime-openvino', 'onnxruntime-openvino', ignore=True)
     elif allow_openvino and args.use_openvino:
         log.info('Using OpenVINO')
-        if "linux" in sys.platform:
-            if sys.version_info[1] == 11:
-                pytorch_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torch-2.1.0.dev20230820+cpu-cp311-cp311-linux_x86_64.whl'
-                torchvision_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torchvision-0.16.0.dev20230820+cpu-cp311-cp311-linux_x86_64.whl'
-            elif sys.version_info[1] == 10:
-                pytorch_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torch-2.1.0.dev20230820+cpu-cp310-cp310-linux_x86_64.whl'
-                torchvision_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torchvision-0.16.0.dev20230820+cpu-cp310-cp310-linux_x86_64.whl'
-            elif sys.version_info[1] == 8:
-                pytorch_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torch-2.1.0.dev20230820+cpu-cp38-cp38-linux_x86_64.whl'
-                torchvision_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torchvision-0.16.0.dev20230820+cpu-cp38-cp38-linux_x86_64.whl'
-            else:
-                pytorch_pip = 'torch==2.1.0'
-                torchvision_pip = 'torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cpu'
-        elif sys.platform == 'darwin':
-            pytorch_pip = 'torch==2.1.0'
-            torchvision_pip = 'torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cpu'
-        else:
-            if sys.version_info[1] == 11:
-                pytorch_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torch-2.1.0.dev20230820+cpu-cp311-cp311-win_amd64.whl'
-                torchvision_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torchvision-0.16.0.dev20230820+cpu-cp311-cp311-win_amd64.whl'
-            elif sys.version_info[1] == 10:
-                pytorch_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torch-2.1.0.dev20230820+cpu-cp310-cp310-win_amd64.whl'
-                torchvision_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torchvision-0.16.0.dev20230820+cpu-cp310-cp310-win_amd64.whl'
-            elif sys.version_info[1] == 8:
-                pytorch_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torch-2.1.0.dev20230820+cpu-cp38-cp38-win_amd64.whl'
-                torchvision_pip = 'https://github.com/Disty0/automatic/releases/download/openvino_pre_release_pytorch/torchvision-0.16.0.dev20230820+cpu-cp38-cp38-win_amd64.whl'
-            else:
-                pytorch_pip = 'torch==2.1.0'
-                torchvision_pip = 'torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cpu'
-        torch_command = os.environ.get('TORCH_COMMAND', f'{pytorch_pip} {torchvision_pip}')
+        torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.1.1 torchvision==0.16.1 --index-url https://download.pytorch.org/whl/cpu')
     else:
         machine = platform.machine()
         if sys.platform == 'darwin':
@@ -543,9 +514,9 @@ def check_torch():
     if opts.get('cuda_compile_backend', '') == 'hidet':
         install('hidet', 'hidet')
     if args.use_openvino or opts.get('cuda_compile_backend', '') == 'openvino_fx':
-        uninstall('openvino-nightly') # TODO remove after people had enough time upgrading
+        uninstall('openvino-nightly') # TODO openvino: remove after people had enough time upgrading
         install('openvino==2023.2.0', 'openvino')
-        install('onnxruntime-openvino', 'onnxruntime-openvino', ignore=True) # TODO numpy version conflicts with tensorflow and doesn't support Python 3.11
+        install('onnxruntime-openvino', 'onnxruntime-openvino', ignore=True) # TODO openvino: numpy version conflicts with tensorflow and doesn't support Python 3.11
         os.environ.setdefault('PYTORCH_TRACING_MODE', 'TORCHFX')
         os.environ.setdefault('NEOReadDebugKeys', '1')
         os.environ.setdefault('ClDeviceGlobalMemSizeAvailablePercent', '100')

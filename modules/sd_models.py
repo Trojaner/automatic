@@ -388,7 +388,7 @@ def read_state_dict(checkpoint_file, map_location=None): # pylint: disable=unuse
         return None
     try:
         pl_sd = None
-        with progress.open(checkpoint_file, 'rb', description=f'[cyan]Loading weights: [yellow]{checkpoint_file}', auto_refresh=True, console=shared.console) as f:
+        with progress.open(checkpoint_file, 'rb', description=f'[cyan]Loading model: [yellow]{checkpoint_file}', auto_refresh=True, console=shared.console) as f:
             _, extension = os.path.splitext(checkpoint_file)
             if extension.lower() == ".ckpt" and shared.opts.sd_disable_ckpt:
                 shared.log.warning(f"Checkpoint loading disabled: {checkpoint_file}")
@@ -552,6 +552,8 @@ class ModelData:
                     self.sd_model = reload_model_weights(op='model')
                     if self.sd_model is not None:
                         self.sd_model.is_sdxl = False # a1111 compatibility item
+                        self.sd_model.is_sd2 = False # a1111 compatibility item
+                        self.sd_model.is_sd1 = True # a1111 compatibility item
                     self.initial = False
                 except Exception as e:
                     shared.log.error("Failed to load stable diffusion model")
@@ -1013,10 +1015,6 @@ def set_diffuser_pipe(pipe, new_pipe_type):
     )
     diffusers.pipelines.auto_pipeline.AUTO_TEXT2IMAGE_PIPELINES_MAPPING = AUTO_TEXT2IMAGE_PIPELINES_MAPPING
     """
-
-    if shared.opts.diffusers_force_inpaint:
-        if new_pipe_type == DiffusersTaskType.IMAGE_2_IMAGE:
-            new_pipe_type = DiffusersTaskType.INPAINTING # sdxl may work better with init mask
     try:
         if new_pipe_type == DiffusersTaskType.TEXT_2_IMAGE:
             new_pipe = diffusers.AutoPipelineForText2Image.from_pipe(pipe)
@@ -1113,7 +1111,6 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None, timer=None,
     shared.log.debug(f"Model created from config: {checkpoint_config}")
     sd_model.used_config = checkpoint_config
     sd_model.has_accelerate = False
-    sd_model.is_sdxl = False # a1111 compatibility item
     timer.record("create")
     ok = load_model_weights(sd_model, checkpoint_info, state_dict, timer)
     if not ok:
