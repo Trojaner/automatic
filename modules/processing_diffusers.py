@@ -17,6 +17,7 @@ from modules.processing import StableDiffusionProcessing, create_random_tensors
 import modules.prompt_parser_diffusers as prompt_parser_diffusers
 from modules.sd_hijack_hypertile import hypertile_set
 from modules.processing_correction import correction_callback
+from modules.onnx import OnnxStableDiffusionPipeline
 
 
 def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_prompts):
@@ -302,7 +303,7 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         negative_pooled = None
         prompts, negative_prompts, prompts_2, negative_prompts_2 = fix_prompts(prompts, negative_prompts, prompts_2, negative_prompts_2)
         parser = 'Fixed attention'
-        if shared.opts.prompt_attention != 'Fixed attention' and 'StableDiffusion' in model.__class__.__name__ and not isinstance(model, diffusers.OnnxStableDiffusionPipeline):
+        if shared.opts.prompt_attention != 'Fixed attention' and 'StableDiffusion' in model.__class__.__name__ and not isinstance(model, OnnxStableDiffusionPipeline):
             try:
                 prompt_embed, pooled, negative_embed, negative_pooled = prompt_parser_diffusers.encode_prompts(model, prompts, negative_prompts, kwargs.pop("clip_skip", None))
                 parser = shared.opts.prompt_attention
@@ -434,13 +435,8 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
 
     def update_sampler(sd_model, second_pass=False):
         sampler_selection = p.latent_sampler if second_pass else p.sampler_name
-<<<<<<< HEAD
-        is_karras_compatible = sd_model.__class__.__init__.__annotations__.get("scheduler", None) == diffusers.schedulers.scheduling_utils.KarrasDiffusionSchedulers or isinstance(shared.sd_model, diffusers.OnnxStableDiffusionPipeline)
-        if hasattr(sd_model, 'scheduler') and sampler_selection != 'Default' and is_karras_compatible:
-=======
         # is_karras_compatible = sd_model.__class__.__init__.__annotations__.get("scheduler", None) == diffusers.schedulers.scheduling_utils.KarrasDiffusionSchedulers
         if hasattr(sd_model, 'scheduler') and sampler_selection != 'Default':
->>>>>>> origin/dev
             sampler = sd_samplers.all_samplers_map.get(sampler_selection, None)
             if sampler is None:
                 sampler = sd_samplers.all_samplers_map.get("UniPC")
