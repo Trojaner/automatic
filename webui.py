@@ -266,6 +266,7 @@ def start_ui():
             favicon_path='html/logo.ico',
             allowed_paths=[os.path.dirname(__file__), cmd_opts.data_dir],
             app_kwargs=fastapi_args,
+            _frontend=not cmd_opts.share,
         )
     if cmd_opts.data_dir is not None:
         ui_tempdir.register_tmp_file(shared.demo, os.path.join(cmd_opts.data_dir, 'x'))
@@ -311,6 +312,9 @@ def webui(restart=False):
     modules.sd_models.write_metadata()
     load_model()
     shared.opts.save(shared.config_filename)
+    if cmd_opts.profile:
+        for k, v in modules.script_callbacks.callback_map.items():
+            shared.log.debug(f'Registered callbacks: {k}={len(v)} {[c.script for c in v]}')
     log.info(f"Startup time: {timer.startup.summary()}")
     debug = log.info if os.environ.get('SD_SCRIPT_DEBUG', None) is not None else lambda *args, **kwargs: None
     debug('Loaded scripts:')

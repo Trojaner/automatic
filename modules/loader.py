@@ -1,5 +1,6 @@
 from __future__ import annotations
 import re
+import sys
 import logging
 import warnings
 import urllib3
@@ -42,3 +43,25 @@ errors.install([gradio])
 import diffusers # pylint: disable=W0611,C0411
 timer.startup.record("diffusers")
 errors.log.info(f'Load packages: torch={getattr(torch, "__long_version__", torch.__version__)} diffusers={diffusers.__version__} gradio={gradio.__version__}')
+
+try:
+    import os
+    import math
+    cores = os.cpu_count()
+    affinity = len(os.sched_getaffinity(0))
+    threads = torch.get_num_threads()
+    if threads < (affinity / 2):
+        torch.set_num_threads(math.floor(affinity / 2))
+        threads = torch.get_num_threads()
+        errors.log.debug(f'Detected: cores={cores} affinity={affinity} set threads={threads}')
+except Exception:
+    pass
+
+try: # fix changed import in torchvision 0.17+, which breaks basicsr
+    import torchvision.transforms.functional_tensor # pylint: disable=unused-import, ungrouped-imports
+except ImportError:
+    try:
+        import torchvision.transforms.functional as functional
+        sys.modules["torchvision.transforms.functional_tensor"] = functional
+    except ImportError:
+        pass  # shrug...

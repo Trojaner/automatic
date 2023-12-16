@@ -64,6 +64,7 @@ restricted_opts = {
     "outdir_save",
     "outdir_init_images"
 }
+resize_modes = ["None", "Fixed", "Crop", "Fill", "Latent"]
 compatibility_opts = ['clip_skip', 'uni_pc_lower_order_final', 'uni_pc_order']
 console = Console(log_time=True, log_time_format='%H:%M:%S-%f')
 
@@ -160,24 +161,21 @@ def list_samplers():
 
 def temp_disable_extensions():
     disable_safe = ['sd-webui-controlnet', 'multidiffusion-upscaler-for-automatic1111', 'a1111-sd-webui-lycoris', 'sd-webui-agent-scheduler', 'clip-interrogator-ext', 'stable-diffusion-webui-rembg', 'sd-extension-chainner', 'stable-diffusion-webui-images-browser']
-    disable_diffusers = ['sd-webui-controlnet', 'multidiffusion-upscaler-for-automatic1111', 'a1111-sd-webui-lycoris']
+    disable_diffusers = ['sd-webui-controlnet', 'multidiffusion-upscaler-for-automatic1111', 'a1111-sd-webui-lycoris', 'sd-webui-animatediff']
     disable_original = []
     disabled = []
     if cmd_opts.safe:
         for ext in disable_safe:
             if ext not in opts.disabled_extensions:
                 disabled.append(ext)
-        log.info(f'Safe mode disabling extensions: {disabled}')
     if backend == Backend.DIFFUSERS:
         for ext in disable_diffusers:
             if ext not in opts.disabled_extensions:
                 disabled.append(ext)
-        log.info(f'Disabling uncompatible extensions: backend={backend} {disabled}')
     if backend == Backend.ORIGINAL:
         for ext in disable_original:
             if ext not in opts.disabled_extensions:
                 disabled.append(ext)
-        log.info(f'Disabling uncompatible extensions: backend={backend} {disabled}')
     cmd_opts.controlnet_loglevel = 'WARNING'
     return disabled
 
@@ -189,6 +187,7 @@ def readfile(filename, silent=False, lock=False):
     try:
         if not os.path.exists(filename):
             return {}
+        t0 = time.time()
         if lock:
             lock_file = fasteners.InterProcessReaderWriterLock(f"{filename}.lock", logger=log)
             locked = lock_file.acquire_read_lock(blocking=True, timeout=3)
@@ -196,8 +195,9 @@ def readfile(filename, silent=False, lock=False):
             data = json.load(file)
         if type(data) is str:
             data = json.loads(data)
+        t1 = time.time()
         if not silent:
-            log.debug(f'Read: file="{filename}" json={len(data)} bytes={os.path.getsize(filename)}')
+            log.debug(f'Read: file="{filename}" json={len(data)} bytes={os.path.getsize(filename)} time={t1-t0:.3f}')
     except Exception as e:
         if not silent:
             log.error(f'Reading failed: {filename} {e}')
@@ -219,6 +219,7 @@ def writefile(data, filename, mode='w', silent=False):
         return str(obj)
 
     try:
+        t0 = time.time()
         # skipkeys=True, ensure_ascii=True, check_circular=True, allow_nan=True
         if type(data) == dict:
             output = json.dumps(data, indent=2, default=default)
@@ -236,8 +237,9 @@ def writefile(data, filename, mode='w', silent=False):
         locked = lock.acquire_write_lock(blocking=True, timeout=3)
         with open(filename, mode, encoding="utf8") as file:
             file.write(output)
+        t1 = time.time()
         if not silent:
-            log.debug(f'Save: file="{filename}" json={len(data)} bytes={len(output)}')
+            log.debug(f'Save: file="{filename}" json={len(data)} bytes={len(output)} time={t1-t0:.3f}')
     except Exception as e:
         log.error(f'Saving failed: {filename} {e}')
     finally:
@@ -262,7 +264,7 @@ else: # cuda
 
 
 options_templates.update(options_section(('sd', "Execution & Models"), {
-    "sd_backend": OptionInfo("diffusers" if cmd_opts.use_openvino else "original", "Execution backend", gr.Radio, {"choices": ["original", "diffusers"] }),
+    "sd_backend": OptionInfo("original" if not cmd_opts.use_openvino else "diffusers", "Execution backend", gr.Radio, {"choices": ["original", "diffusers"] }),
     "sd_checkpoint_autoload": OptionInfo(True, "Model autoload on server start"),
     "sd_model_checkpoint": OptionInfo(default_checkpoint, "Base model", gr.Dropdown, lambda: {"choices": list_checkpoint_tiles()}, refresh=refresh_checkpoints),
     "sd_model_refiner": OptionInfo('None', "Refiner model", gr.Dropdown, lambda: {"choices": ['None'] + list_checkpoint_tiles()}, refresh=refresh_checkpoints),
@@ -282,9 +284,9 @@ options_templates.update(options_section(('cuda', "Compute Settings"), {
     "math_sep": OptionInfo("<h2>Execution precision</h2>", "", gr.HTML),
     "precision": OptionInfo("Autocast", "Precision type", gr.Radio, {"choices": ["Autocast", "Full"]}),
     "cuda_dtype": OptionInfo("FP32" if sys.platform == "darwin" or cmd_opts.use_openvino else "BF16" if devices.backend == "ipex" else "FP16", "Device precision type", gr.Radio, {"choices": ["FP32", "FP16", "BF16"]}),
-    "no_half": OptionInfo(True if cmd_opts.use_openvino else False, "Use full precision for model (--no-half)", None, None, None),
-    "no_half_vae": OptionInfo(True if cmd_opts.use_openvino else False, "Use full precision for VAE (--no-half-vae)"),
-    "upcast_sampling": OptionInfo(True if sys.platform == "darwin" else False, "Enable upcast sampling"),
+    "no_half": OptionInfo(False if not cmd_opts.use_openvino else True, "Use full precision for model (--no-half)", None, None, None),
+    "no_half_vae": OptionInfo(False if not cmd_opts.use_openvino else True, "Use full precision for VAE (--no-half-vae)"),
+    "upcast_sampling": OptionInfo(False if sys.platform != "darwin" else True, "Enable upcast sampling"),
     "upcast_attn": OptionInfo(False, "Enable upcast cross attention layer"),
     "cuda_cast_unet": OptionInfo(False, "Use fixed UNet precision"),
     "disable_nan_check": OptionInfo(True, "Disable NaN check in produced images/latent spaces", gr.Checkbox, {"visible": False}),
@@ -304,19 +306,19 @@ options_templates.update(options_section(('cuda', "Compute Settings"), {
     "torch_gc_threshold": OptionInfo(80 if devices.backend == "ipex" else 90, "VRAM usage threshold before running Torch GC to clear up VRAM", gr.Slider, {"minimum": 0, "maximum": 100, "step": 1}),
 
     "cuda_compile_sep": OptionInfo("<h2>Model Compile</h2>", "", gr.HTML),
-    "cuda_compile": OptionInfo(True if cmd_opts.use_openvino else False, "Compile UNet"),
-    "cuda_compile_vae": OptionInfo(True if cmd_opts.use_openvino else False, "Compile VAE"),
-    "cuda_compile_upscaler": OptionInfo(True if cmd_opts.use_openvino else False, "Compile upscaler"),
-    "cuda_compile_backend": OptionInfo("openvino_fx" if cmd_opts.use_openvino else "none", "Model compile backend", gr.Radio, {"choices": ['none', 'inductor', 'cudagraphs', 'aot_ts_nvfuser', 'hidet', 'ipex', 'openvino_fx', 'stable-fast']}),
+    "cuda_compile": OptionInfo(False if not cmd_opts.use_openvino else True, "Compile UNet"),
+    "cuda_compile_vae": OptionInfo(False if not cmd_opts.use_openvino else True, "Compile VAE"),
+    "cuda_compile_upscaler": OptionInfo(False if not cmd_opts.use_openvino else True, "Compile upscaler"),
+    "cuda_compile_backend": OptionInfo("none" if not cmd_opts.use_openvino else "openvino_fx", "Model compile backend", gr.Radio, {"choices": ['none', 'inductor', 'cudagraphs', 'aot_ts_nvfuser', 'hidet', 'ipex', 'openvino_fx', 'stable-fast']}),
     "cuda_compile_mode": OptionInfo("default", "Model compile mode", gr.Radio, {"choices": ['default', 'reduce-overhead', 'max-autotune', 'max-autotune-no-cudagraphs']}),
     "cuda_compile_fullgraph": OptionInfo(False, "Model compile fullgraph"),
-    "cuda_compile_precompile": OptionInfo(False if cmd_opts.use_openvino else True, "Model compile precompile"),
+    "cuda_compile_precompile": OptionInfo(False, "Model compile precompile"),
     "cuda_compile_verbose": OptionInfo(False, "Model compile verbose mode"),
     "cuda_compile_errors": OptionInfo(True, "Model compile suppress errors"),
 
     "ipex_sep": OptionInfo("<h2>IPEX, DirectML and OpenVINO</h2>", "", gr.HTML),
-    "ipex_optimize": OptionInfo(True if devices.backend == "ipex" else False, "Enable IPEX Optimize for Intel GPUs"),
-    "ipex_optimize_upscaler": OptionInfo(True if devices.backend == "ipex" else False, "Enable IPEX Optimize for Intel GPUs with Upscalers"),
+    "ipex_optimize": OptionInfo(False if not devices.backend == "ipex" else True, "Enable IPEX Optimize for Intel GPUs"),
+    "ipex_optimize_upscaler": OptionInfo(False if not devices.backend == "ipex" else True, "Enable IPEX Optimize for Intel GPUs with Upscalers"),
     "directml_memory_provider": OptionInfo(default_memory_provider, 'DirectML memory stats provider', gr.Radio, {"choices": memory_providers}),
     "directml_catch_nan": OptionInfo(False, "DirectML retry specific operation when NaN is produced if possible. (makes generation slower)"),
     "openvino_disable_model_caching": OptionInfo(False, "OpenVINO disable model caching"),
@@ -361,7 +363,7 @@ options_templates.update(options_section(('diffusers', "Diffusers Settings"), {
     "diffusers_seq_cpu_offload": OptionInfo(False, "Enable sequential CPU offload (--lowvram)"),
     "diffusers_vae_upcast": OptionInfo("default", "VAE upcasting", gr.Radio, {"choices": ['default', 'true', 'false']}),
     "diffusers_vae_slicing": OptionInfo(True, "Enable VAE slicing"),
-    "diffusers_vae_tiling": OptionInfo(False if cmd_opts.use_openvino else True, "Enable VAE tiling"),
+    "diffusers_vae_tiling": OptionInfo(True if not cmd_opts.use_openvino else False, "Enable VAE tiling"),
     "diffusers_attention_slicing": OptionInfo(False, "Enable attention slicing"),
     "diffusers_model_load_variant": OptionInfo("default", "Diffusers model loading variant", gr.Radio, {"choices": ['default', 'fp32', 'fp16']}),
     "diffusers_vae_load_variant": OptionInfo("default", "Diffusers VAE loading variant", gr.Radio, {"choices": ['default', 'fp32', 'fp16']}),
@@ -394,6 +396,7 @@ options_templates.update(options_section(('system-paths', "System Paths"), {
     "styles_dir": OptionInfo(os.path.join(paths.data_path, 'styles.csv'), "File or Folder with user-defined styles", folder=True),
     "embeddings_dir": OptionInfo(os.path.join(paths.models_path, 'embeddings'), "Folder with textual inversion embeddings", folder=True),
     "hypernetwork_dir": OptionInfo(os.path.join(paths.models_path, 'hypernetworks'), "Folder with Hypernetwork models", folder=True),
+    "control_dir": OptionInfo(os.path.join(paths.models_path, 'control'), "Folder with Control models", folder=True),
     "codeformer_models_path": OptionInfo(os.path.join(paths.models_path, 'Codeformer'), "Folder with codeformer models", folder=True),
     "gfpgan_models_path": OptionInfo(os.path.join(paths.models_path, 'GFPGAN'), "Folder with GFPGAN models", folder=True),
     "esrgan_models_path": OptionInfo(os.path.join(paths.models_path, 'ESRGAN'), "Folder with ESRGAN models", folder=True),
@@ -407,6 +410,7 @@ options_templates.update(options_section(('system-paths', "System Paths"), {
     "onnx_sideloaded_models_path": OptionInfo(os.path.join(paths.models_path, 'ONNX', 'sideloaded'), "Folder with ONNX models from huggingface", folder=True),
 
     "other_paths_sep_options": OptionInfo("<h2>Other paths</h2>", "", gr.HTML),
+    "openvino_cache_path": OptionInfo('cache', "Directory for OpenVINO cache", folder=True),
     "temp_dir": OptionInfo("", "Directory for temporary images; leave empty for default", folder=True),
     "clean_temp_dir_at_start": OptionInfo(True, "Cleanup non-default temporary directory when starting webui"),
     "onnx_temp_dir": OptionInfo(os.path.join(paths.models_path, 'ONNX', 'temp'), "Directory for ONNX conversion and Olive optimization process", folder=True),
@@ -424,7 +428,7 @@ options_templates.update(options_section(('saving-images', "Image Options"), {
 
     "image_sep_metadata": OptionInfo("<h2>Metadata/Logging</h2>", "", gr.HTML),
     "image_metadata": OptionInfo(True, "Include metadata in saved images"),
-    "save_txt": OptionInfo(False, "Create text file next to every image with generation parameters"),
+    "save_txt": OptionInfo(False, "Create info file for each every image"),
     "save_log_fn": OptionInfo("", "Create JSON log file for each saved image", component_args=hide_dirs),
     "image_watermark_enabled": OptionInfo(False, "Include watermark in saved images"),
     "image_watermark": OptionInfo('', "Image watermark string"),
@@ -459,11 +463,12 @@ options_templates.update(options_section(('saving-paths', "Image Naming & Paths"
 
     "outdir_sep_dirs": OptionInfo("<h2>Directories</h2>", "", gr.HTML),
     "outdir_samples": OptionInfo("", "Output directory for images", component_args=hide_dirs, folder=True),
-    "outdir_txt2img_samples": OptionInfo("outputs/text", 'Output directory for txt2img images', component_args=hide_dirs, folder=True),
-    "outdir_img2img_samples": OptionInfo("outputs/image", 'Output directory for img2img images', component_args=hide_dirs, folder=True),
-    "outdir_extras_samples": OptionInfo("outputs/extras", 'Output directory for images from extras tab', component_args=hide_dirs, folder=True),
-    "outdir_save": OptionInfo("outputs/save", "Directory for saving images using the Save button", component_args=hide_dirs, folder=True),
-    "outdir_init_images": OptionInfo("outputs/init-images", "Directory for saving init images when using img2img", component_args=hide_dirs, folder=True),
+    "outdir_txt2img_samples": OptionInfo("outputs/text", 'Directory for text generate', component_args=hide_dirs, folder=True),
+    "outdir_img2img_samples": OptionInfo("outputs/image", 'Directory for image generate', component_args=hide_dirs, folder=True),
+    "outdir_extras_samples": OptionInfo("outputs/extras", 'Directory for processed images', component_args=hide_dirs, folder=True),
+    "outdir_save": OptionInfo("outputs/save", "Directory for manually saved images", component_args=hide_dirs, folder=True),
+    "outdir_video": OptionInfo("outputs/video", "Directory for videos", component_args=hide_dirs, folder=True),
+    "outdir_init_images": OptionInfo("outputs/init-images", "Directory for init images", component_args=hide_dirs, folder=True),
 
     "outdir_sep_grids": OptionInfo("<h2>Grids</h2>", "", gr.HTML),
     "grid_extended_filename": OptionInfo(True, "Add extended info (seed, prompt) to filename when saving grid", gr.Checkbox, {"visible": False}),
@@ -481,8 +486,8 @@ options_templates.update(options_section(('ui', "User Interface"), {
     "gallery_height": OptionInfo("", "Gallery height", gr.Textbox),
     "compact_view": OptionInfo(False, "Compact view"),
     "return_grid": OptionInfo(True, "Show grid in results"),
-    "return_mask": OptionInfo(False, "For inpainting, include the greyscale mask in results"),
-    "return_mask_composite": OptionInfo(False, "For inpainting, include masked composite in results"),
+    "return_mask": OptionInfo(False, "Inpainting include greyscale mask in results"),
+    "return_mask_composite": OptionInfo(False, "Inpainting include masked composite in results"),
     "disable_weights_auto_swap": OptionInfo(True, "Do not change selected model when reading generation parameters"),
     "send_seed": OptionInfo(True, "Send seed when sending prompt or image to other interface"),
     "send_size": OptionInfo(True, "Send size when sending prompt or image to another interface"),
@@ -528,6 +533,8 @@ options_templates.update(options_section(('sampler-params', "Sampler Settings"),
     "schedulers_beta_schedule": OptionInfo("default", "Beta schedule", gr.Radio, {"choices": ['default', 'linear', 'scaled_linear', 'squaredcos_cap_v2']}),
     'schedulers_beta_start': OptionInfo(0, "Beta start", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.00001}),
     'schedulers_beta_end': OptionInfo(0, "Beta end", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.00001}),
+    'schedulers_timesteps_range': OptionInfo(1000, "Timesteps range", gr.Slider, {"minimum": 250, "maximum": 4000, "step": 1}),
+    "schedulers_rescale_betas": OptionInfo(False, "Rescale betas with zero terminal SNR", gr.Checkbox),
 
     # managed from ui.py for backend original k-diffusion
     "schedulers_sep_kdiffusers": OptionInfo("<h2>K-Diffusion specific config</h2>", "", gr.HTML),
@@ -552,9 +559,11 @@ options_templates.update(options_section(('sampler-params', "Sampler Settings"),
 options_templates.update(options_section(('postprocessing', "Postprocessing"), {
     'postprocessing_enable_in_main_ui': OptionInfo([], "Enable additional postprocessing operations", ui_components.DropdownMulti, lambda: {"choices": [x.name for x in shared_items.postprocessing_scripts()]}),
     'postprocessing_operation_order': OptionInfo([], "Postprocessing operation order", ui_components.DropdownMulti, lambda: {"choices": [x.name for x in shared_items.postprocessing_scripts()]}),
+
     "postprocessing_sep_img2img": OptionInfo("<h2>Img2Img & Inpainting</h2>", "", gr.HTML),
-    "img2img_color_correction": OptionInfo(False, "Apply color correction to match original colors"),
-    "img2img_fix_steps": OptionInfo(False, "For image processing do exact number of steps as specified"),
+    "img2img_color_correction": OptionInfo(False, "Apply color correction"),
+    "img2img_apply_overlay": OptionInfo(False, "Apply result as overlay"),
+    "img2img_fix_steps": OptionInfo(False, "For image processing do exact number of steps as specified", gr.Checkbox, { "visible": False }),
     "img2img_background_color": OptionInfo("#ffffff", "Image transparent color fill", ui_components.FormColorPicker, {}),
     "inpainting_mask_weight": OptionInfo(1.0, "Inpainting conditioning mask strength", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
     "initial_noise_multiplier": OptionInfo(1.0, "Noise multiplier for image processing", gr.Slider, {"minimum": 0.1, "maximum": 1.5, "step": 0.01}),
@@ -568,7 +577,7 @@ options_templates.update(options_section(('postprocessing', "Postprocessing"), {
     "postprocessing_sep_upscalers": OptionInfo("<h2>Upscaling</h2>", "", gr.HTML),
     "upscaler_unload": OptionInfo(False, "Unload upscaler after processing"),
     # 'upscaling_max_images_in_cache': OptionInfo(5, "Maximum number of images in upscaling cache", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1, "visible": False}),
-    "upscaler_for_img2img": OptionInfo("None", "Default upscaler for image resize operations", gr.Dropdown, lambda: {"choices": [x.name for x in sd_upscalers]}),
+    "upscaler_for_img2img": OptionInfo("None", "Default upscaler for image resize operations", gr.Dropdown, lambda: {"choices": [x.name for x in sd_upscalers], "visible": False}),
     "upscaler_tile_size": OptionInfo(192, "Upscaler tile size", gr.Slider, {"minimum": 0, "maximum": 512, "step": 16}),
     "upscaler_tile_overlap": OptionInfo(8, "Upscaler tile overlap", gr.Slider, {"minimum": 0, "maximum": 64, "step": 1}),
 }))
@@ -613,18 +622,17 @@ options_templates.update(options_section(('extra_networks', "Extra Networks"), {
     "extra_networks_card_size": OptionInfo(160, "UI card size (px)", gr.Slider, {"minimum": 20, "maximum": 2000, "step": 1}),
     "extra_networks_card_square": OptionInfo(True, "UI disable variable aspect ratio"),
     "extra_networks_card_fit": OptionInfo("cover", "UI image contain method", gr.Radio, {"choices": ["contain", "cover", "fill"], "visible": False}),
-
     "extra_networks_sep2": OptionInfo("<h2>Extra networks general</h2>", "", gr.HTML),
-    "extra_network_skip_indexing": OptionInfo(False, "Do not automatically build extra network pages", gr.Checkbox),
+    "extra_network_skip_indexing": OptionInfo(False, "Build info on first access", gr.Checkbox),
     "extra_networks_default_multiplier": OptionInfo(1.0, "Default multiplier for extra networks", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
-
     "extra_networks_sep3": OptionInfo("<h2>Extra networks settings</h2>", "", gr.HTML),
     "extra_networks_styles": OptionInfo(True, "Show built-in styles"),
     "lora_preferred_name": OptionInfo("filename", "LoRA preffered name", gr.Radio, {"choices": ["filename", "alias"]}),
     "lora_add_hashes_to_infotext": OptionInfo(True, "LoRA add hash info"),
+    "lora_force_diffusers": OptionInfo(False if not cmd_opts.use_openvino else True, "LoRA use alternative loading method"),
+    "lora_fuse_diffusers": OptionInfo(False if not cmd_opts.use_openvino else True, "LoRA use merge when using alternative method"),
     "lora_in_memory_limit": OptionInfo(0, "LoRA memory cache", gr.Slider, {"minimum": 0, "maximum": 24, "step": 1}),
     "lora_functional": OptionInfo(False, "Use Kohya method for handling multiple LoRA", gr.Checkbox, { "visible": False }),
-
     "sd_hypernetwork": OptionInfo("None", "Add hypernetwork to prompt", gr.Dropdown, { "choices": ["None"], "visible": False }),
 }))
 
@@ -793,6 +801,7 @@ class Options:
             value = expected_type(value)
         return value
 
+profiler = None
 opts = Options()
 config_filename = cmd_opts.config
 opts.load(config_filename)
@@ -816,6 +825,7 @@ device = devices.device
 batch_cond_uncond = opts.always_batch_cond_uncond or not (cmd_opts.lowvram or cmd_opts.medvram)
 parallel_processing_allowed = not cmd_opts.lowvram
 mem_mon = modules.memmon.MemUsageMonitor("MemMon", devices.device)
+max_workers = 2
 if devices.backend == "directml":
     directml_do_hijack()
 
@@ -933,8 +943,9 @@ def req(url_addr, headers = None, **kwargs):
 class Shared(sys.modules[__name__].__class__): # this class is here to provide sd_model field as a property, so that it can be created and loaded on demand rather than at program startup.
     @property
     def sd_model(self):
-        # log.debug(f'Access shared.sd_model: {sys._getframe().f_back.f_code.co_name}') # pylint: disable=protected-access
         import modules.sd_models # pylint: disable=W0621
+        if modules.sd_models.model_data.sd_model is None:
+            log.debug(f'Model requested: fn={sys._getframe().f_back.f_code.co_name}') # pylint: disable=protected-access
         return modules.sd_models.model_data.get_sd_model()
 
     @sd_model.setter
@@ -971,6 +982,8 @@ class Shared(sys.modules[__name__].__class__): # this class is here to provide s
                 model_type = 'sd'
             elif "LatentConsistencyModel" in self.sd_model.__class__.__name__:
                 model_type = 'sd' # lcm is compatible with sd
+            elif "AnimateDiffPipeline" in self.sd_model.__class__.__name__:
+                model_type = 'sd' # ad is compatible with sd
             elif "Kandinsky" in self.sd_model.__class__.__name__:
                 model_type = 'kandinsky'
             else:

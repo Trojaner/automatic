@@ -20,7 +20,7 @@ import tomesd
 from transformers import logging as transformers_logging
 import ldm.modules.midas as midas
 from ldm.util import instantiate_from_config
-from modules import paths, shared, shared_items, shared_state, modelloader, devices, script_callbacks, sd_vae, sd_disable_initialization, errors, hashes, sd_models_config, sd_models_compile, sd_hijack_inpainting
+from modules import paths, shared, shared_items, shared_state, modelloader, devices, script_callbacks, sd_vae, errors, hashes, sd_models_config, sd_models_compile, sd_hijack_inpainting
 from modules.timer import Timer
 from modules.memstats import memory_stats
 from modules.paths import models_path, script_path
@@ -474,6 +474,9 @@ def load_model_weights(model: torch.nn.Module, checkpoint_info: CheckpointInfo, 
     model.sd_model_hash = checkpoint_info.calculate_shorthash()
     model.sd_model_checkpoint = checkpoint_info.filename
     model.sd_checkpoint_info = checkpoint_info
+    model.is_sdxl = False # a1111 compatibility item
+    model.is_sd2 = False # a1111 compatibility item
+    model.is_sd1 = True # a1111 compatibility item
     shared.opts.data["sd_checkpoint_hash"] = checkpoint_info.sha256
     model.logvar = model.logvar.to(devices.device)  # fix for training
     sd_vae.delete_base_vae()
@@ -550,10 +553,6 @@ class ModelData:
             with self.lock:
                 try:
                     self.sd_model = reload_model_weights(op='model')
-                    if self.sd_model is not None:
-                        self.sd_model.is_sdxl = False # a1111 compatibility item
-                        self.sd_model.is_sd2 = False # a1111 compatibility item
-                        self.sd_model.is_sd1 = True # a1111 compatibility item
                     self.initial = False
                 except Exception as e:
                     shared.log.error("Failed to load stable diffusion model")
@@ -605,6 +604,7 @@ def detect_pipeline(f: str, op: str = 'model', warning=True):
     warn = shared.log.warning if warning else lambda *args, **kwargs: None
     if guess == 'Autodetect':
         try:
+            # guess by size
             size = round(os.path.getsize(f) / 1024 / 1024)
             if size < 128:
                 warn(f'Model size smaller than expected: {f} size={size} MB')
@@ -637,14 +637,27 @@ def detect_pipeline(f: str, op: str = 'model', warning=True):
                 guess = 'Stable Diffusion XL Instruct'
             else:
                 guess = 'Stable Diffusion'
-            if 'LCM_' in f or 'LCM-' in f:
+            # guess by name
+            """
+            if 'LCM_' in f.upper() or 'LCM-' in f.upper() or '_LCM' in f.upper() or '-LCM' in f.upper():
                 if shared.backend == shared.Backend.ORIGINAL:
                     warn(f'Model detected as LCM model, but attempting to load using backend=original: {op}={f} size={size} MB')
                 guess = 'Latent Consistency Model'
+            """
             if 'PixArt' in f:
                 if shared.backend == shared.Backend.ORIGINAL:
                     warn(f'Model detected as PixArt Alpha model, but attempting to load using backend=original: {op}={f} size={size} MB')
                 guess = 'PixArt Alpha'
+            # switch for specific variant
+            if guess == 'Stable Diffusion' and 'inpaint' in f.lower():
+                guess = 'Stable Diffusion Inpaint'
+            elif guess == 'Stable Diffusion' and 'instruct' in f.lower():
+                guess = 'Stable Diffusion Instruct'
+            if guess == 'Stable Diffusion XL' and 'inpaint' in f.lower():
+                guess = 'Stable Diffusion XL Inpaint'
+            elif guess == 'Stable Diffusion XL' and 'instruct' in f.lower():
+                guess = 'Stable Diffusion XL Instruct'
+            # get actual pipeline
             pipeline = shared_items.get_pipelines().get(guess, None)
             shared.log.info(f'Autodetect: {op}="{guess}" class={pipeline.__name__} file="{f}" size={size}MB')
         except Exception as e:
@@ -664,7 +677,19 @@ def detect_pipeline(f: str, op: str = 'model', warning=True):
     return pipeline, guess
 
 
-def set_diffuser_options(sd_model, vae, op: str):
+def copy_diffuser_options(new_pipe, orig_pipe):
+    new_pipe.sd_checkpoint_info = orig_pipe.sd_checkpoint_info
+    new_pipe.sd_model_checkpoint = orig_pipe.sd_model_checkpoint
+    new_pipe.sd_model_hash = orig_pipe.sd_model_hash
+    new_pipe.has_accelerate = orig_pipe.has_accelerate
+    new_pipe.embedding_db = orig_pipe.embedding_db
+    new_pipe.is_sdxl = True # pylint: disable=attribute-defined-outside-init # a1111 compatibility item
+    new_pipe.is_sd2 = False # pylint: disable=attribute-defined-outside-init
+    new_pipe.is_sd1 = False # pylint: disable=attribute-defined-outside-init
+
+
+
+def set_diffuser_options(sd_model, vae = None, op: str = 'model'):
     if sd_model is None:
         shared.log.warning(f'{op} is not loaded')
         return
@@ -731,13 +756,13 @@ def set_diffuser_options(sd_model, vae, op: str):
         sd_model.enable_xformers_memory_efficient_attention()
 
     if shared.opts.diffusers_eval:
-        if hasattr(sd_model, "unet"):
+        if hasattr(sd_model, "unet") and hasattr(sd_model.unet, "requires_grad_"):
             sd_model.unet.requires_grad_(False)
             sd_model.unet.eval()
-        if hasattr(sd_model, "vae"):
+        if hasattr(sd_model, "vae") and hasattr(sd_model.vae, "requires_grad_"):
             sd_model.vae.requires_grad_(False)
             sd_model.vae.eval()
-        if hasattr(sd_model, "text_encoder"):
+        if hasattr(sd_model, "text_encoder") and hasattr(sd_model.text_encoder, "requires_grad_"):
             sd_model.text_encoder.requires_grad_(False)
             sd_model.text_encoder.eval()
 
@@ -748,6 +773,10 @@ def set_diffuser_options(sd_model, vae, op: str):
 
 def load_diffuser(checkpoint_info=None, already_loaded_state_dict=None, timer=None, op='model'): # pylint: disable=unused-argument
     import torch # pylint: disable=reimported,redefined-outer-name
+    if shared.cmd_opts.profile:
+        import cProfile
+        pr = cProfile.Profile()
+        pr.enable()
     if timer is None:
         timer = Timer()
     logging.getLogger("diffusers").setLevel(logging.ERROR)
@@ -790,7 +819,7 @@ def load_diffuser(checkpoint_info=None, already_loaded_state_dict=None, timer=No
     sd_model = None
 
     try:
-        if shared.cmd_opts.ckpt is not None and model_data.initial: # initial load
+        if shared.cmd_opts.ckpt is not None and os.path.isdir(shared.cmd_opts.ckpt) and model_data.initial: # initial load
             ckpt_basename = os.path.basename(shared.cmd_opts.ckpt)
             model_name = modelloader.find_diffuser(ckpt_basename)
             if model_name is not None:
@@ -817,6 +846,7 @@ def load_diffuser(checkpoint_info=None, already_loaded_state_dict=None, timer=No
             if vae is not None:
                 diffusers_load_config["vae"] = vae
 
+        shared.log.debug(f'Diffusers loading: path="{checkpoint_info.path}"')
         if 'ONNX' in shared.opts.diffusers_pipeline and os.path.isdir(checkpoint_info.path):
             pipeline = shared_items.get_pipelines().get(shared.opts.diffusers_pipeline, None)
             if pipeline is not None:
@@ -894,6 +924,7 @@ def load_diffuser(checkpoint_info=None, already_loaded_state_dict=None, timer=No
                     shared.log.debug(f'Setting {op}: pipeline={sd_model.__class__.__name__} config={diffusers_load_config}') # pylint: disable=protected-access
             except Exception as e:
                 shared.log.error(f'Diffusers failed loading: {op}={checkpoint_info.path} pipeline={shared.opts.diffusers_pipeline}/{sd_model.__class__.__name__} {e}')
+                errors.display(e, f'loading {op}={checkpoint_info.path} pipeline={shared.opts.diffusers_pipeline}/{sd_model.__class__.__name__}')
                 return
         else:
             shared.log.error(f'Diffusers cannot load: {op}={checkpoint_info.path}')
@@ -967,6 +998,8 @@ def load_diffuser(checkpoint_info=None, already_loaded_state_dict=None, timer=No
 
     timer.record("load")
     devices.torch_gc(force=True)
+    if shared.cmd_opts.profile:
+        errors.profile(pr, 'Load')
     script_callbacks.model_loaded_callback(sd_model)
     shared.log.info(f"Load {op}: time={timer.summary()} native={get_native(sd_model)} {memory_stats()}")
 
@@ -1033,6 +1066,9 @@ def set_diffuser_pipe(pipe, new_pipe_type):
     new_pipe.sd_model_hash = sd_model_hash
     new_pipe.has_accelerate = has_accelerate
     new_pipe.embedding_db = embedding_db
+    new_pipe.is_sdxl = True # pylint: disable=attribute-defined-outside-init # a1111 compatibility item
+    new_pipe.is_sd2 = False # pylint: disable=attribute-defined-outside-init
+    new_pipe.is_sd1 = False # pylint: disable=attribute-defined-outside-init
     shared.log.debug(f"Pipeline class change: original={pipe.__class__.__name__} target={new_pipe.__class__.__name__}")
     pipe = new_pipe
     return pipe
@@ -1099,12 +1135,16 @@ def load_model(checkpoint_info=None, already_loaded_state_dict=None, timer=None,
     sd_model = None
     stdout = io.StringIO()
     with contextlib.redirect_stdout(stdout):
+        """
         try:
             clip_is_included_into_sd = sd1_clip_weight in state_dict or sd2_clip_weight in state_dict
             with sd_disable_initialization.DisableInitialization(disable_clip=clip_is_included_into_sd):
                 sd_model = instantiate_from_config(sd_config.model)
-        except Exception:
+        except Exception as e:
+            shared.log.error(f'LDM: instantiate from config: {e}')
             sd_model = instantiate_from_config(sd_config.model)
+        """
+        sd_model = instantiate_from_config(sd_config.model)
     for line in stdout.getvalue().splitlines():
         if len(line) > 0:
             shared.log.info(f'LDM: {line.strip()}')

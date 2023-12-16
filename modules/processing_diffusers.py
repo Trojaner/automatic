@@ -5,7 +5,6 @@ import inspect
 import typing
 import torch
 import torchvision.transforms.functional as TF
-import diffusers
 import modules.devices as devices
 import modules.shared as shared
 import modules.sd_samplers as sd_samplers
@@ -27,7 +26,7 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
     if hasattr(shared.sd_model, 'preprocess'):
         shared.sd_model = shared.sd_model.preprocess(p.width, p.height, p.batch_size)
 
-    if hasattr(p, 'init_images') and len(p.init_images) > 0:
+    if getattr(p, 'init_images', None) is not None and len(p.init_images) > 0:
         tgt_width, tgt_height = 8 * math.ceil(p.init_images[0].width / 8), 8 * math.ceil(p.init_images[0].height / 8)
         if p.init_images[0].width != tgt_width or p.init_images[0].height != tgt_height:
             shared.log.debug(f'Resizing init images: original={p.init_images[0].width}x{p.init_images[0].height} target={tgt_width}x{tgt_height}')
@@ -41,6 +40,10 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             p.mask_for_overlay = images.resize_image(1, p.mask_for_overlay, tgt_width, tgt_height, upscaler_name=None)
 
     def hires_resize(latents): # input=latents output=pil
+        if not torch.is_tensor(latents):
+            shared.log.warning('Hires: input is not tensor')
+            first_pass_images = vae_decode(latents=latents, model=shared.sd_model, full_quality=p.full_quality, output_type='pil')
+            return first_pass_images
         latent_upscaler = shared.latent_upscale_modes.get(p.hr_upscaler, None)
         shared.log.info(f'Hires: upscaler={p.hr_upscaler} width={p.hr_upscale_to_x} height={p.hr_upscale_to_y} images={latents.shape[0]}')
         if latent_upscaler is not None:
@@ -63,9 +66,10 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             for j in range(len(decoded)):
                 images.save_image(decoded[j], path=p.outpath_samples, basename="", seed=seeds[i], prompt=prompts[i], extension=shared.opts.samples_format, info=info, p=p, suffix=suffix)
 
-    def diffusers_callback_legacy(step: int, _timestep: int, latents: torch.FloatTensor):
+    def diffusers_callback_legacy(step: int, timestep: int, latents: torch.FloatTensor):
         shared.state.sampling_step = step
         shared.state.current_latent = latents
+        latents = correction_callback(p, timestep, {'latents': latents})
         if shared.state.interrupted or shared.state.skipped:
             raise AssertionError('Interrupted...')
         if shared.state.paused:
@@ -76,10 +80,7 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
                 time.sleep(0.1)
 
     def diffusers_callback(_pipe, step: int, timestep: int, kwargs: dict):
-        latents = correction_callback(p, timestep, kwargs)
-        latents = kwargs['latents']
         shared.state.sampling_step = step
-        shared.state.current_latent = latents
         if shared.state.interrupted or shared.state.skipped:
             raise AssertionError('Interrupted...')
         if shared.state.paused:
@@ -88,7 +89,13 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
                 if shared.state.interrupted or shared.state.skipped:
                     raise AssertionError('Interrupted...')
                 time.sleep(0.1)
-        return {'latents': latents}
+        if kwargs.get('latents', None) is None:
+            return kwargs
+        kwargs = correction_callback(p, timestep, kwargs)
+        shared.state.current_latent = kwargs['latents']
+        if shared.cmd_opts.profile and shared.profiler is not None:
+            shared.profiler.step()
+        return kwargs
 
     def full_vae_decode(latents, model):
         t0 = time.time()
@@ -132,7 +139,7 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         if len(latents) == 0:
             return []
         decoded = torch.zeros((len(latents), 3, latents.shape[2] * 8, latents.shape[3] * 8), dtype=devices.dtype_vae, device=devices.device)
-        for i in range(len(output.images)):
+        for i in range(latents.shape[0]):
             decoded[i] = sd_vae_taesd.decode(latents[i])
         return decoded
 
@@ -142,6 +149,7 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         return encoded
 
     def vae_decode(latents, model, output_type='np', full_quality=True):
+        t0 = time.time()
         prev_job = shared.state.job
         shared.state.job = 'vae'
         if not torch.is_tensor(latents): # already decoded
@@ -154,6 +162,8 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         if not hasattr(model, 'vae'):
             shared.log.error('VAE not found in model')
             return []
+        if latents.shape[0] == 4 and latents.shape[1] != 4: # likely animatediff latent
+            latents = latents.permute(1, 0, 2, 3)
         if len(latents.shape) == 3: # lost a batch dim in hires
             latents = latents.unsqueeze(0)
         if full_quality:
@@ -162,8 +172,16 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             decoded = taesd_vae_decode(latents=latents)
         # TODO validate decoded sample diffusers
         # decoded = validate_sample(decoded)
-        imgs = model.image_processor.postprocess(decoded, output_type=output_type)
+        if hasattr(model, 'image_processor'):
+            imgs = model.image_processor.postprocess(decoded, output_type=output_type)
+        else:
+            import diffusers
+            image_processor = diffusers.image_processor.VaeImageProcessor()
+            imgs = image_processor.postprocess(decoded, output_type=output_type)
         shared.state.job = prev_job
+        if shared.cmd_opts.profile:
+            t1 = time.time()
+            shared.log.debug(f'Profile: VAE decode: {t1-t0:.2f}')
         return imgs
 
     def vae_encode(image, model, full_quality=True): # pylint: disable=unused-variable
@@ -203,16 +221,27 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
 
     def task_specific_kwargs(model):
         task_args = {}
-        is_img2img_model = bool("Zero123" in shared.sd_model.__class__.__name__)
+        is_img2img_model = bool('Zero123' in shared.sd_model.__class__.__name__)
         if sd_models.get_diffusers_task(model) == sd_models.DiffusersTaskType.TEXT_2_IMAGE and not is_img2img_model:
             p.ops.append('txt2img')
-            task_args = {"height": 8 * math.ceil(p.height / 8), "width": 8 * math.ceil(p.width / 8)}
+            task_args = {
+                'height': 8 * math.ceil(p.height / 8),
+                'width': 8 * math.ceil(p.width / 8),
+            }
         elif (sd_models.get_diffusers_task(model) == sd_models.DiffusersTaskType.IMAGE_2_IMAGE or is_img2img_model) and len(getattr(p, 'init_images' ,[])) > 0:
             p.ops.append('img2img')
-            task_args = {"image": p.init_images, "strength": p.denoising_strength}
+            task_args = {
+                'image': p.init_images,
+                'strength': p.denoising_strength,
+            }
         elif sd_models.get_diffusers_task(model) == sd_models.DiffusersTaskType.INSTRUCT and len(getattr(p, 'init_images' ,[])) > 0:
             p.ops.append('instruct')
-            task_args = {"height": 8 * math.ceil(p.height / 8), "width": 8 * math.ceil(p.width / 8), "image": p.init_images, "strength": p.denoising_strength}
+            task_args = {
+                'height': 8 * math.ceil(p.height / 8),
+                'width': 8 * math.ceil(p.width / 8),
+                'image': p.init_images,
+                'strength': p.denoising_strength,
+            }
         elif (sd_models.get_diffusers_task(model) == sd_models.DiffusersTaskType.INPAINTING or is_img2img_model) and len(getattr(p, 'init_images' ,[])) > 0:
             p.ops.append('inpaint')
             if getattr(p, 'mask', None) is None:
@@ -220,7 +249,13 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             width = 8 * math.ceil(p.init_images[0].width / 8)
             height = 8 * math.ceil(p.init_images[0].height / 8)
             # option-1: use images as inputs
-            task_args = {"image": p.init_images, "mask_image": p.mask, "strength": p.denoising_strength, "height": height, "width": width}
+            task_args = {
+                'image': p.init_images,
+                'mask_image': p.mask,
+                'strength': p.denoising_strength,
+                'height': height,
+                'width': width,
+            }
             """ # option-2: preprocess images into latents using diffusers
             vae_scale_factor = 2 ** (len(model.vae.config.block_out_channels) - 1)
             image_processor = diffusers.image_processor.VaeImageProcessor(vae_scale_factor=vae_scale_factor)
@@ -240,14 +275,20 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             task_args = {"image": p.init_images, "mask_image": mask_image, "masked_image_latents": masked_image_latents, "strength": p.denoising_strength, "height": height, "width": width}
             """
         if model.__class__.__name__ == 'LatentConsistencyModelPipeline' and hasattr(p, 'init_images') and len(p.init_images) > 0:
+            p.ops.append('lcm')
             init_latents = [vae_encode(image, model=shared.sd_model, full_quality=p.full_quality).squeeze(dim=0) for image in p.init_images]
             init_latent = torch.stack(init_latents, dim=0).to(shared.device)
             init_noise = p.denoising_strength * create_random_tensors(init_latent.shape[1:], seeds=p.all_seeds, subseeds=p.all_subseeds, subseed_strength=p.subseed_strength, p=p)
             init_latent = (1 - p.denoising_strength) * init_latent + init_noise
-            task_args = {"latents": init_latent.to(model.dtype), "width": p.width, "height": p.height }
+            task_args = {
+                'latents': init_latent.to(model.dtype),
+                'width': p.width,
+                'height': p.height,
+            }
         return task_args
 
     def set_pipeline_args(model, prompts: list, negative_prompts: list, prompts_2: typing.Optional[list]=None, negative_prompts_2: typing.Optional[list]=None, desc:str='', **kwargs):
+        t0 = time.time()
         if hasattr(model, "set_progress_bar_config"):
             model.set_progress_bar_config(bar_format='Progress {rate_fmt}{postfix} {bar} {percentage:3.0f}% {n_fmt}/{total_fmt} {elapsed} {remaining} ' + '\x1b[38;5;71m' + desc, ncols=80, colour='#327fba')
         args = {}
@@ -312,13 +353,15 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
                 pass
         task_kwargs = task_specific_kwargs(model)
         for arg in task_kwargs:
-            if arg in possible and arg not in args: # task specific args should not override args
+            # if arg in possible and arg not in args: # task specific args should not override args
+            if arg in possible:
                 args[arg] = task_kwargs[arg]
-            else:
-                pass
-        for k, v in getattr(p, 'task_args', {}).items():
-            args[k] = v
-        hypertile_set(p, hr=len(getattr(p, 'init_images', [])))
+        task_args = getattr(p, 'task_args', {})
+        for k, v in task_args.items():
+            if k in possible:
+                args[k] = v
+
+        hypertile_set(p, hr=len(getattr(p, 'init_images', [])) > 0)
         clean = args.copy()
         clean.pop('callback', None)
         clean.pop('callback_steps', None)
@@ -349,8 +392,17 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         clean['generator'] = generator_device
         clean['parser'] = parser
         shared.log.debug(f'Diffuser pipeline: {model.__class__.__name__} task={sd_models.get_diffusers_task(model)} set={clean}')
+        if p.hdr_clamp or p.hdr_center or p.hdr_maximize:
+            txt = 'HDR:'
+            txt += f' Clamp threshold={p.hdr_threshold} boundary={p.hdr_boundary}' if p.hdr_clamp else ' Clamp off'
+            txt += f' Center channel-shift={p.hdr_channel_shift} full-shift={p.hdr_full_shift}' if p.hdr_center else ' Center off'
+            txt += f' Maximize boundary={p.hdr_max_boundry} center={p.hdr_max_center}' if p.hdr_maximize else ' Maximize off'
+            shared.log.debug(txt)
         # components = [{ k: getattr(v, 'device', None) } for k, v in model.components.items()]
         # shared.log.debug(f'Diffuser pipeline components: {components}')
+        if shared.cmd_opts.profile:
+            t1 = time.time()
+            shared.log.debug(f'Profile: pipeline args: {t1-t0:.2f}')
         return args
 
     def recompile_model(hires=False):
@@ -382,18 +434,19 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
 
     def update_sampler(sd_model, second_pass=False):
         sampler_selection = p.latent_sampler if second_pass else p.sampler_name
+<<<<<<< HEAD
         is_karras_compatible = sd_model.__class__.__init__.__annotations__.get("scheduler", None) == diffusers.schedulers.scheduling_utils.KarrasDiffusionSchedulers or isinstance(shared.sd_model, diffusers.OnnxStableDiffusionPipeline)
         if hasattr(sd_model, 'scheduler') and sampler_selection != 'Default' and is_karras_compatible:
+=======
+        # is_karras_compatible = sd_model.__class__.__init__.__annotations__.get("scheduler", None) == diffusers.schedulers.scheduling_utils.KarrasDiffusionSchedulers
+        if hasattr(sd_model, 'scheduler') and sampler_selection != 'Default':
+>>>>>>> origin/dev
             sampler = sd_samplers.all_samplers_map.get(sampler_selection, None)
             if sampler is None:
                 sampler = sd_samplers.all_samplers_map.get("UniPC")
             sd_samplers.create_sampler(sampler.name, sd_model)
             # TODO extra_generation_params add sampler options
             # p.extra_generation_params['Sampler options'] = ''
-
-    recompile_model()
-    update_sampler(shared.sd_model)
-    p.extra_generation_params['Pipeline'] = shared.sd_model.__class__.__name__
 
     if len(getattr(p, 'init_images', [])) > 0:
         while len(p.init_images) < len(prompts):
@@ -413,8 +466,10 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         if is_img2img:
             if use_denoise_start and shared.sd_model_type == 'sdxl':
                 steps = p.steps // (1 - p.refiner_start)
-            else:
+            elif p.denoising_strength > 0:
                 steps = (p.steps // p.denoising_strength) + 1
+            else:
+                steps = p.steps
         elif use_refiner_start and shared.sd_model_type == 'sdxl':
             steps = (p.steps // p.refiner_start) + 1
         else:
@@ -427,8 +482,10 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
     def calculate_hires_steps():
         if p.hr_second_pass_steps > 0:
             steps = (p.hr_second_pass_steps // p.denoising_strength) + 1
-        else:
+        elif p.denoising_strength > 0:
             steps = (p.steps // p.denoising_strength) + 1
+        else:
+            steps = 0
 
         if os.environ.get('SD_STEPS_DEBUG', None) is not None:
             shared.log.debug(f'Steps: type=hires input={p.hr_second_pass_steps} output={steps} denoise={p.denoising_strength}')
@@ -439,8 +496,10 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
             if p.refiner_start > 0 and p.refiner_start < 1:
                 #steps = p.refiner_steps // (1 - p.refiner_start) # SDXL with denoise strenght
                 steps = (p.refiner_steps // (1 - p.refiner_start) // 2) + 1
-            else:
+            elif p.denoising_strength > 0:
                 steps = (p.refiner_steps // p.denoising_strength) + 1
+            else:
+                steps = 0
         else:
             #steps = p.refiner_steps # SD 1.5 with denoise strenght
             steps = (p.refiner_steps * 1.25) + 1
@@ -464,6 +523,7 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         negative_prompts_2=[p.refiner_negative] if len(p.refiner_negative) > 0 else negative_prompts,
         num_inference_steps=calculate_base_steps(),
         eta=shared.opts.scheduler_eta,
+        guidance_scale=p.cfg_scale,
         guidance_rescale=p.diffusers_guidance_rescale,
         denoising_start=0 if use_refiner_start else p.refiner_start if use_denoise_start else None,
         denoising_end=p.refiner_start if use_refiner_start else 1 if use_denoise_start else None,
@@ -471,17 +531,31 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
         clip_skip=p.clip_skip,
         desc='Base',
     )
+    recompile_model()
+    update_sampler(shared.sd_model)
     shared.state.sampling_steps = base_args['num_inference_steps']
+    p.extra_generation_params['Pipeline'] = shared.sd_model.__class__.__name__
     p.extra_generation_params["Sampler Eta"] = shared.opts.scheduler_eta if shared.opts.scheduler_eta is not None and shared.opts.scheduler_eta > 0 and shared.opts.scheduler_eta < 1 else None
     try:
+        t0 = time.time()
         output = shared.sd_model(**base_args) # pylint: disable=not-callable
+        if shared.cmd_opts.profile:
+            t1 = time.time()
+            shared.log.debug(f'Profile: pipeline call: {t1-t0:.2f}')
+        if not hasattr(output, 'images') and hasattr(output, 'frames'):
+            shared.log.debug(f'Generated: frames={len(output.frames[0])}')
+            output.images = output.frames[0]
     except AssertionError as e:
         shared.log.info(e)
     except ValueError as e:
         shared.state.interrupted = True
-        shared.log.error(f'Processing: {e}')
+        shared.log.error(f'Processing: args={base_args} {e}')
         if shared.cmd_opts.debug:
             errors.display(e, 'Processing')
+    except RuntimeError as e:
+        shared.state.interrupted = True
+        shared.log.error(f'Processing: args={base_args} {e}')
+        errors.display(e, 'Processing')
 
     if hasattr(shared.sd_model, 'embedding_db') and len(shared.sd_model.embedding_db.embeddings_used) > 0:
         p.extra_generation_params['Embeddings'] = ', '.join(shared.sd_model.embedding_db.embeddings_used)
@@ -604,8 +678,15 @@ def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_pro
 
     # final decode since there is no refiner
     if not is_refiner_enabled:
-        if output is not None and output.images is not None and len(output.images) > 0:
-            results = vae_decode(latents=output.images, model=shared.sd_model, full_quality=p.full_quality)
+        if output is not None:
+            if not hasattr(output, 'images') and hasattr(output, 'frames'):
+                shared.log.debug(f'Generated: frames={len(output.frames[0])}')
+                output.images = output.frames[0]
+            if output.images is not None and len(output.images) > 0:
+                results = vae_decode(latents=output.images, model=shared.sd_model, full_quality=p.full_quality)
+            else:
+                shared.log.warning('Processing returned no results')
+                results = []
         else:
             shared.log.warning('Processing returned no results')
             results = []

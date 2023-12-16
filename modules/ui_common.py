@@ -35,7 +35,7 @@ def plaintext_to_html(text):
 
 def infotext_to_html(text):
     res = parse_generation_parameters(text)
-    prompt = res.get('Prompt', '').replace('\n', '<br>\n')
+    prompt = res.get('Prompt', '')
     negative = res.get('Negative prompt', '')
     res.pop('Prompt', None)
     res.pop('Negative prompt', None)
@@ -134,6 +134,17 @@ def save_files(js_data, images, html_info, index):
             shutil.copy(fullfn, destination)
             shared.log.info(f'Copying image: file="{fullfn}" folder="{destination}"')
             tgt_filename = os.path.join(destination, os.path.basename(fullfn))
+            if shared.opts.save_txt:
+                try:
+                    from PIL import Image
+                    image = Image.open(fullfn)
+                    info, _ = images.read_info_from_image(image)
+                    filename_txt = f"{os.path.splitext(tgt_filename)[0]}.txt"
+                    with open(filename_txt, "w", encoding="utf8") as file:
+                        file.write(f"{info}\n")
+                    shared.log.debug(f'Saving: text="{filename_txt}"')
+                except Exception as e:
+                    shared.log.warning(f'Image description save failed: {filename_txt} {e}')
             modules.script_callbacks.image_save_btn_callback(tgt_filename)
         else:
             image = image_from_url_text(filedata)
@@ -146,15 +157,16 @@ def save_files(js_data, images, html_info, index):
             fullfns.append(fullfn)
             if txt_fullfn:
                 filenames.append(os.path.basename(txt_fullfn))
-                fullfns.append(txt_fullfn)
+                # fullfns.append(txt_fullfn)
             modules.script_callbacks.image_save_btn_callback(filename)
     if shared.opts.samples_save_zip and len(fullfns) > 1:
         zip_filepath = os.path.join(shared.opts.outdir_save, "images.zip")
         from zipfile import ZipFile
         with ZipFile(zip_filepath, "w") as zip_file:
             for i in range(len(fullfns)):
-                with open(fullfns[i], mode="rb") as f:
-                    zip_file.writestr(filenames[i], f.read())
+                if os.path.isfile(fullfns[i]):
+                    with open(fullfns[i], mode="rb") as f:
+                        zip_file.writestr(filenames[i], f.read())
         fullfns.insert(0, zip_filepath)
     return gr.File.update(value=fullfns, visible=True), plaintext_to_html(f"Saved: {filenames[0] if len(filenames) > 0 else 'none'}")
 

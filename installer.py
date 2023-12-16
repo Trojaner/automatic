@@ -6,8 +6,6 @@ import shutil
 import logging
 import platform
 import subprocess
-import io
-import pstats
 import cProfile
 import pkg_resources
 
@@ -29,6 +27,7 @@ opts = {}
 args = Dot({
     'debug': False,
     'reset': False,
+    'profile': False,
     'upgrade': False,
     'skip_extensions': False,
     'skip_requirements': False,
@@ -143,19 +142,9 @@ def print_dict(d):
     return ' '.join([f'{k}={v}' for k, v in d.items()])
 
 
-def print_profile(profile: cProfile.Profile, msg: str):
-    try:
-        from rich import print # pylint: disable=redefined-builtin
-    except Exception:
-        pass
-    profile.disable()
-    stream = io.StringIO()
-    ps = pstats.Stats(profile, stream=stream)
-    ps.sort_stats(pstats.SortKey.CUMULATIVE).print_stats(15)
-    profile = None
-    lines = stream.getvalue().split('\n')
-    lines = [line for line in lines if '<frozen' not in line and '{built-in' not in line and '/logging' not in line and '/rich' not in line]
-    print(f'Profile {msg}:', '\n'.join(lines))
+def print_profile(profiler: cProfile.Profile, msg: str):
+    from modules.errors import profile
+    profile(profiler, msg)
 
 
 # check if package is installed
@@ -434,15 +423,12 @@ def check_torch():
         log.info('Intel OneAPI Toolkit detected')
         os.environ.setdefault('NEOReadDebugKeys', '1')
         os.environ.setdefault('ClDeviceGlobalMemSizeAvailablePercent', '100')
+        torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.1.0a0 torchvision==0.16.0a0 intel-extension-for-pytorch==2.1.10+xpu --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/')
         if "linux" in sys.platform:
-            torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.0.1a0 torchvision==0.15.2a0 intel_extension_for_pytorch==2.0.110+xpu --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/')
-            os.environ.setdefault('TENSORFLOW_PACKAGE', 'tensorflow==2.13.0 intel-extension-for-tensorflow[gpu]')
-        else:
-            pytorch_pip = 'https://github.com/Nuullll/intel-extension-for-pytorch/releases/download/v2.0.110%2Bxpu-master%2Bdll-bundle/torch-2.0.0a0+gite9ebda2-cp310-cp310-win_amd64.whl'
-            torchvision_pip = 'https://github.com/Nuullll/intel-extension-for-pytorch/releases/download/v2.0.110%2Bxpu-master%2Bdll-bundle/torchvision-0.15.2a0+fa99a53-cp310-cp310-win_amd64.whl'
-            ipex_pip = 'https://github.com/Nuullll/intel-extension-for-pytorch/releases/download/v2.0.110%2Bxpu-master%2Bdll-bundle/intel_extension_for_pytorch-2.0.110+gitc6ea20b-cp310-cp310-win_amd64.whl'
-            torch_command = os.environ.get('TORCH_COMMAND', f'{pytorch_pip} {torchvision_pip} {ipex_pip}')
-        install('openvino', 'openvino', ignore=True)
+            os.environ.setdefault('TENSORFLOW_PACKAGE', 'tensorflow==2.14.0 intel-extension-for-tensorflow[xpu]==2.14.0.1')
+        install(os.environ.get('MKL_PACKAGE', 'mkl==2024.0.0'), 'mkl')
+        install(os.environ.get('DPCPP_PACKAGE', 'mkl-dpcpp==2024.0.0'), 'mkl-dpcpp')
+        install(os.environ.get('OPENVINO_PACKAGE', 'openvino==2023.2.0'), 'openvino', ignore=True)
         install('onnxruntime-openvino', 'onnxruntime-openvino', ignore=True)
     elif allow_openvino and args.use_openvino:
         log.info('Using OpenVINO')
@@ -514,8 +500,7 @@ def check_torch():
     if opts.get('cuda_compile_backend', '') == 'hidet':
         install('hidet', 'hidet')
     if args.use_openvino or opts.get('cuda_compile_backend', '') == 'openvino_fx':
-        uninstall('openvino-nightly') # TODO openvino: remove after people had enough time upgrading
-        install('openvino==2023.2.0', 'openvino')
+        install(os.environ.get('OPENVINO_PACKAGE', 'openvino==2023.2.0'), 'openvino')
         install('onnxruntime-openvino', 'onnxruntime-openvino', ignore=True) # TODO openvino: numpy version conflicts with tensorflow and doesn't support Python 3.11
         os.environ.setdefault('PYTORCH_TRACING_MODE', 'TORCHFX')
         os.environ.setdefault('NEOReadDebugKeys', '1')
@@ -767,6 +752,7 @@ def set_environment():
     os.environ.setdefault('TF_ENABLE_ONEDNN_OPTS', '0')
     os.environ.setdefault('USE_TORCH', '1')
     os.environ.setdefault('UVICORN_TIMEOUT_KEEP_ALIVE', '60')
+    os.environ.setdefault('KINETO_LOG_LEVEL', '3')
     os.environ.setdefault('HF_HUB_CACHE', opts.get('hfcache_dir', os.path.join(os.path.expanduser('~'), '.cache', 'huggingface', 'hub')))
     log.debug(f'Cache folder: {os.environ.get("HF_HUB_CACHE")}')
     if sys.platform == 'darwin':

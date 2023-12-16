@@ -1,22 +1,135 @@
 # Change Log for SD.Next
 
-## Update for 2023-11-24
+## Update for 2023-12-14
 
-Note: Release pending `diffusers==0.24`
+*Note*: based on `diffusers==0.25.0.dev0`
+
+- **Diffusers**
+  - **AnimateDiff** can now be used with *second pass* - enhance, upscale and hires your videos!  
+  - **IP Adapter** add support for `ip-adapter-plus_sd15`, `ip-adapter-plus-face_sd15` and `ip-adapter-full-face_sd15`  
+    additionally, ip-adapter can now be used in xyz-grid  
+  - [Playground v1](https://huggingface.co/playgroundai/playground-v1), [Playground v2 256](https://huggingface.co/playgroundai/playground-v2-256px-base), [Playground v2 512](https://huggingface.co/playgroundai/playground-v2-512px-base), [Playground v2 1024](https://huggingface.co/playgroundai/playground-v2-1024px-aesthetic) model support  
+    - simply select from *networks -> reference* and use as usual  
+  - [DemoFusion](https://github.com/PRIS-CV/DemoFusion) run your SDXL generations at any resolution!  
+    - in **Text** tab select *script* -> *demofusion*
+    - *note*: GPU VRAM limits do not automatically go away so be careful when using it with large resolutions  
+      in the future, expect more optimizations, especially related to offloading/slicing/tiling,  
+      but at the moment this is pretty much experimental-only
+  - [ModelScope T2V](https://huggingface.co/damo-vilab/text-to-video-ms-1.7b) model support  
+    - simply select from *networks -> reference* and use from *txt2img* tab
+  - **Schedulers**
+    - add timesteps range, changing it will make scheduler to be over-complete or under-complete  
+    - add rescale betas with zero SNR option (applicable to Euler and DDIM, allows for higher dynamic range)  
+  - **Custom Pipelines** contribute by adding your own custom pipelines!
+    - for details, see fully documented example: <https://github.com/vladmandic/automatic/blob/dev/scripts/example.py>
+- **General**  
+  - **Process** create videos from batch or folder processing  
+      supports *GIF*, *PNG* and *MP4* with full interpolation, scene change detection, etc.  
+  - **LoRA**  
+    - add support for block weights, thanks @AI-Casanova  
+      example `<lora:SDXL_LCM_LoRA:1.0:in=0:mid=1:out=0>`  
+    - reintroduce alternative loading method in settings: `lora_force_diffusers`  
+    - add support for `lora_fuse_diffusers` if using alternative method  
+      use if you have multiple complex loras that may be causing performance degradation  
+      as it fuses lora with model during load instead of interpreting lora on-the-fly  
+  - **CivitAI downloader** allow usage of access tokens for download of gated or private models  
+  - **Extra networks** new *settting -> extra networks -> build info on first access*  
+    indexes all networks on first access instead of server startup  
+  - **IPEX**, thanks @disty0  
+    - update to **Torch 2.1**  
+      if you get file not found errors, set DISABLE_IPEXRUN=1 and run the webui with --reinstall  
+    - built-in *MKL* and *DPCPP* for IPEX, no need to install OneAPI anymore  
+    - fix IPEX Optimize not applying with Diffusers backend  
+    - disable 32 bit workarounds if the GPU supports 64 bit  
+    - add DISABLE_IPEXRUN environment variable
+    - compatibility improvements  
+  - **OpenVINO**, thanks @disty0  
+    - add *Directory for OpenVINO cache* option to *System Paths*  
+    - remove Intel ARC specific 1024x1024 workaround  
+  - **UI**
+    - more dynamic controls depending on the backend (original or diffusers)  
+      controls that are not applicable in current mode are now hidden  
+    - allow setting of resize method directly in image tab  
+      (previously via settings -> upscaler_for_img2img)
+  - **HDR controls**
+    - batch-aware for enhancement of multiple images or video frames  
+    - available in image tab  
+  - **Other**
+    - **Inpaint** add option `apply_overlay` to control if inpaint result should be applied as overlay or as-is  
+      can remove artifacts and hard edges of inpaint area but also remove some details from original  
+    - **chaiNNer** fix NaN issues due to autocast  
+    - **Extra Networks** fix sort
+    - disable google fonts check on server startup  
+    - fix torchvision/basicsr compatibility  
+    - add hdr settings to metadata  
+    - improve handling of long filenames and filenames during batch processing  
+    - do not set preview samples when using via api  
+    - avoid unnecessary resizes in img2img and inpaint  
+    - updated `cli/simple-txt2img.py` and `cli/simple-img2img.py` scripts  
+    - save `params.txt` regardless of image save status
+    - update built-in log monitor in ui, thanks @midcoastal  
+
+## Update for 2023-12-04
+
+What's new? Native video in SD.Next via both **AnimateDiff** and **Stable-Video-Diffusion** - and including native MP4 encoding and smooth video outputs out-of-the-box, not just animated-GIFs.  
+Also new is support for **SDXL-Turbo** as well as new **Kandinsky 3** models and cool latent correction via **HDR controls** for any *txt2img* workflows, best-of-class **SDXL model merge** using full ReBasin methods and further mobile UI optimizations.  
 
 - **Diffusers**
   - **IP adapter**
-    - Lightweight implementation of T2I adapters which can guide generation towards specific image style
-    - Supports most T2I models, not limited to SD
+    - lightweight native implementation of T2I adapters which can guide generation towards specific image style  
+    - supports most T2I models, not limited to SD 1.5  
+    - models are auto-downloaded on first use
+    - for IP adapter support in *Original* backend, use standard *ControlNet* extension  
+  - **AnimateDiff**
+    - lightweight native implementation of AnimateDiff models:  
+      *AnimateDiff 1.4, 1.5 v1, 1.5 v2, AnimateFace*
+    - supports SD 1.5 only  
+    - models are auto-downloaded on first use  
+    - for video saving support, see video support section
+    - can be combined with IP-Adapter for even better results!  
+    - for AnimateDiff support in *Original* backend, use standard *AnimateDiff* extension  
   - **HDR latent control**, based on [article](https://huggingface.co/blog/TimothyAlexisVass/explaining-the-sdxl-latent-space#long-prompts-at-high-guidance-scales-becoming-possible)  
-    - In *Advanced* params
-    - Allows control of *latent clamping*, *color centering* and *range maximimization*
-    - Supported by *XYZ grid*
-- **General**
-  - log level defaults to info for console and debug for log file
-  - better prompt display in process tab
-  - increase maximum lora cache values
-  - fix for python 3.9 compatibility
+    - in *Advanced* params
+    - allows control of *latent clamping*, *color centering* and *range maximimization*  
+    - supported by *XYZ grid*  
+  - [SD21 Turbo](https://huggingface.co/stabilityai/sd-turbo) and [SDXL Turbo](<https://huggingface.co/stabilityai/sdxl-turbo>) support  
+    - just set CFG scale (0.0-1.0) and steps (1-3) to a very low value  
+    - compatible with original StabilityAI SDXL-Turbo or any of the newer merges
+    - download safetensors or select from networks -> reference
+  - [Stable Video Diffusion](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid) and [Stable Video Diffusion XT](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt) support  
+    - download using built-in model downloader or simply select from *networks -> reference*  
+      support for manually downloaded safetensors models will be added later  
+    - for video saving support, see video support section
+    - go to *image* tab, enter input image and select *script* -> *stable video diffusion*
+  - [Kandinsky 3](https://huggingface.co/kandinsky-community/kandinsky-3) support  
+    - download using built-in model downloader or simply select from *networks -> reference*  
+    - this model is absolutely massive at 27.5GB at fp16, so be patient  
+    - model params count is at 11.9B (compared to SD-XL at 3.3B) and its trained on mixed resolutions from 256px to 1024px  
+    - use either model offload or sequential cpu offload to be able to use it  
+  - better autodetection of *inpaint* and *instruct* pipelines  
+  - support long seconary prompt for refiner  
+- **Video support**
+  - applies to any model that supports video generation, e.g. AnimateDiff and StableVideoDiffusion  
+  - support for **animated-GIF**, **animated-PNG** and **MP4**  
+  - GIF and PNG can be looped  
+  - MP4 can have additional padding at the start/end as well as motion-aware interpolated frames for smooth playback  
+    interpolation is done using [RIFE](https://arxiv.org/abs/2011.06294) with native implementation in SD.Next  
+    And its fast - interpolation from 16 frames with 10x frames to target 160 frames results takes 2-3sec
+  - output folder for videos is in *settings -> image paths -> video*  
+- **General**  
+  - redesigned built-in profiler  
+    - now includes both `python` and `torch` and traces individual functions  
+    - use with `--debug --profile`  
+  - **model merge** add **SD-XL ReBasin** support, thanks @AI-Casanova  
+  - further UI optimizations for **mobile devices**, thanks @iDeNoh  
+  - log level defaults to info for console and debug for log file  
+  - better prompt display in process tab  
+  - increase maximum lora cache values  
+  - fix extra networks sorting
+  - fix controlnet compatibility issues in original backend  
+  - fix img2img/inpaint paste params  
+  - fix save text file for manually saved images  
+  - fix python 3.9 compatibility issues  
 
 ## Update for 2023-11-23
 

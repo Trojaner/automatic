@@ -58,16 +58,25 @@ All individual features are not listed here, instead check [ChangeLog](CHANGELOG
 
 Additional models will be added as they become available and there is public interest in them
 
-- [RunwayML Stable Diffusion](https://github.com/Stability-AI/stablediffusion/) 1.x and 2.x *(all variants)*
-- [StabilityAI Stable Diffusion XL](https://github.com/Stability-AI/generative-models)
-- [Segmind SSD-1B](https://huggingface.co/segmind/SSD-1B)
-- [LCM: Latent Consistency Models](https://github.com/openai/consistency_models)
-- [Kandinsky](https://github.com/ai-forever/Kandinsky-2) 2.1 and 2.2
-- [PixArt-α XL 2](https://github.com/PixArt-alpha/PixArt-alpha) Medium and Large
+- [RunwayML Stable Diffusion](https://github.com/Stability-AI/stablediffusion/) 1.x and 2.x *(all variants)*  
+- [StabilityAI Stable Diffusion XL](https://github.com/Stability-AI/generative-models)  
+- [StabilityAI Stable Video Diffusion](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid) Base and XT  
+- [Segmind SSD-1B](https://huggingface.co/segmind/SSD-1B)  
+- [LCM: Latent Consistency Models](https://github.com/openai/consistency_models)  
+- [Kandinsky](https://github.com/ai-forever/Kandinsky-2) *2.1 and 2.2 and latest 3.0*  
+- [PixArt-α XL 2](https://github.com/PixArt-alpha/PixArt-alpha) *Medium and Large*  
 - [Warp Wuerstchen](https://huggingface.co/blog/wuertschen)  
+- [Playground](https://huggingface.co/playgroundai/playground-v2-256px-base) *v1, v2 256, v2 512, v2 1024*  
 - [Tsinghua UniDiffusion](https://github.com/thu-ml/unidiffuser)
-- [DeepFloyd IF](https://github.com/deep-floyd/IF) Medium and Large
+- [DeepFloyd IF](https://github.com/deep-floyd/IF) *Medium and Large*
+- [ModelScope T2V](https://huggingface.co/damo-vilab/text-to-video-ms-1.7b)
 - [Segmind SD Distilled](https://huggingface.co/blog/sd_distillation) *(all variants)*
+
+Also supported are modifiers such as:
+- **LCM** and **Turbo** (Adversarial Diffusion Distillation) networks
+- All **LoRA** types such as LoCon, LyCORIS, HADA, IA3, Lokr, OFT
+- **AnimateDiff** for SD 1.5
+- **IP-Adapters** for SD 1.5 and SD-XL
 
 > [!IMPORTANT]
 > - Loading any model other than standard SD 1.x / SD 2.x requires use of backend **Diffusers**  
@@ -94,6 +103,7 @@ Additional models will be added as they become available and there is public int
 - [Advanced install notes](https://github.com/vladmandic/automatic/wiki/Advanced-Install)
 - [Common installation errors](https://github.com/vladmandic/automatic/discussions/1627)  
 - [FAQ](https://github.com/vladmandic/automatic/discussions/1011)
+- If you can't run us locally, try our friends at [RunDuffusion!](https://rundiffusion.com?utm_source=github&utm_medium=referral&utm_campaign=SDNext)
 
 > [!TIP]
 > - Server can run without virtual environment,  
@@ -201,6 +211,9 @@ General goals:
 
 ### **Docs**
 
+If you're unsure how to use a feature, best place to start is [Wiki](https://github.com/vladmandic/automatic/wiki) and if its not there,  
+check [ChangeLog](CHANGELOG.md) for when feature was first introduced as it will always have a short note on how to use it  
+
 - [Wiki](https://github.com/vladmandic/automatic/wiki)
 - [ReadMe](README.md)
 - [ToDo](TODO.md)  
@@ -210,7 +223,7 @@ General goals:
 ### **Sponsors**
 
 <div align="center">
-<!-- sponsors --><a href="https://github.com/Tillerz"><img src="https://github.com/Tillerz.png" width="60px" alt="Tillerz" /></a><a href="https://github.com/allangrant"><img src="https://github.com/allangrant.png" width="60px" alt="Allan Grant" /></a><a href="https://github.com/demib72"><img src="https://github.com/demib72.png" width="60px" alt="Michael Harris" /></a><a href="https://github.com/BrentOzar"><img src="https://github.com/BrentOzar.png" width="60px" alt="Brent Ozar" /></a><a href="https://github.com/AimwiseTonix"><img src="https://github.com/AimwiseTonix.png" width="60px" alt="ToniX" /></a><a href="https://github.com/inktomi"><img src="https://github.com/inktomi.png" width="60px" alt="Matthew Runo" /></a><a href="https://github.com/HELLO-WORLD-SAS"><img src="https://github.com/HELLO-WORLD-SAS.png" width="60px" alt="HELLO WORLD SAS" /></a><a href="https://github.com/4joeknight4"><img src="https://github.com/4joeknight4.png" width="60px" alt="" /></a><a href="https://github.com/SaladTechnologies"><img src="https://github.com/SaladTechnologies.png" width="60px" alt="Salad Technologies" /></a><a href="https://github.com/mantzaris"><img src="https://github.com/mantzaris.png" width="60px" alt="a.v.mantzaris" /></a><!-- sponsors -->
+<!-- sponsors --><a href="https://github.com/Tillerz"><img src="https://github.com/Tillerz.png" width="60px" alt="Tillerz" /></a><a href="https://github.com/allangrant"><img src="https://github.com/allangrant.png" width="60px" alt="Allan Grant" /></a><a href="https://github.com/BrentOzar"><img src="https://github.com/BrentOzar.png" width="60px" alt="Brent Ozar" /></a><a href="https://github.com/inktomi"><img src="https://github.com/inktomi.png" width="60px" alt="Matthew Runo" /></a><a href="https://github.com/HELLO-WORLD-SAS"><img src="https://github.com/HELLO-WORLD-SAS.png" width="60px" alt="HELLO WORLD SAS" /></a><a href="https://github.com/4joeknight4"><img src="https://github.com/4joeknight4.png" width="60px" alt="" /></a><a href="https://github.com/SaladTechnologies"><img src="https://github.com/SaladTechnologies.png" width="60px" alt="Salad Technologies" /></a><a href="https://github.com/mantzaris"><img src="https://github.com/mantzaris.png" width="60px" alt="a.v.mantzaris" /></a><!-- sponsors -->
 </div>
 
 <br>

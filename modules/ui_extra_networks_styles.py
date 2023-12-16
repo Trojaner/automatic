@@ -53,7 +53,7 @@ class ExtraNetworksPageStyles(ui_extra_networks.ExtraNetworksPage):
             "name": name,
             "title": name,
             "filename": fn,
-            "search_term": f'{self.search_terms_from_path(name)}',
+            "search_term": f'{self.search_terms_from_path(fn)} {params.get("Prompt", "")}',
             "preview": self.find_preview(name),
             "description": '',
             "prompt": params.get('Prompt', ''),
@@ -79,7 +79,7 @@ class ExtraNetworksPageStyles(ui_extra_networks.ExtraNetworksPage):
                 "name": name,
                 "title": k,
                 "filename": style.filename,
-                "search_term": f'{txt} {self.search_terms_from_path(name)}',
+                "search_term": f'{self.search_terms_from_path(name)} {txt}',
                 "preview": style.preview if getattr(style, 'preview', None) is not None and style.preview.startswith('data:') else self.find_preview(fn),
                 "description": style.description if getattr(style, 'description', None) is not None and len(style.description) > 0 else txt,
                 "prompt": getattr(style, 'prompt', ''),
@@ -95,7 +95,7 @@ class ExtraNetworksPageStyles(ui_extra_networks.ExtraNetworksPage):
         return item
 
     def list_items(self):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=shared.max_workers) as executor:
             future_items = {executor.submit(self.create_item, style): style for style in list(shared.prompt_styles.styles)}
             for future in concurrent.futures.as_completed(future_items):
                 item = future.result()

@@ -15,7 +15,7 @@ from collections import OrderedDict
 import gradio as gr
 from PIL import Image
 from starlette.responses import FileResponse, JSONResponse
-from modules import paths, shared, scripts, modelloader
+from modules import paths, shared, scripts, modelloader, errors
 from modules.ui_components import ToolButton
 import modules.ui_symbols as symbols
 
@@ -270,7 +270,7 @@ class ExtraNetworksPage:
             self.html = f"<div id='{tabname}_{self_name_id}_subdirs' class='extra-network-subdirs'>{subdirs_html}</div><div id='{tabname}_{self_name_id}_cards' class='extra-network-cards'>{self.html}</div>"
         else:
             return ''
-        shared.log.debug(f"Extra networks: page='{self.name}' items={len(self.items)} subfolders={len(subdirs)} tab={tabname} folders={self.allowed_directories_for_previews()} list={self.list_time:.2f} desc={self.desc_time:.2f} info={self.info_time:.2f}")
+        shared.log.debug(f"Extra networks: page='{self.name}' items={len(self.items)} subfolders={len(subdirs)} tab={tabname} folders={self.allowed_directories_for_previews()} list={self.list_time:.2f} desc={self.desc_time:.2f} info={self.info_time:.2f} workers={shared.max_workers}")
         if len(self.missing_thumbs) > 0:
             threading.Thread(target=self.create_thumb).start()
         return self.html
@@ -343,7 +343,6 @@ class ExtraNetworksPage:
                     self.text += '\n'
 
         fn = os.path.splitext(path)[0] + '.txt'
-        # if os.path.exists(fn):
         if fn in listdir(os.path.dirname(path)):
             try:
                 with open(fn, "r", encoding="utf-8", errors="replace") as f:
@@ -364,7 +363,6 @@ class ExtraNetworksPage:
     def find_info(self, path):
         t0 = time.time()
         fn = os.path.splitext(path)[0] + '.json'
-        # if os.path.exists(fn):
         data = {}
         if fn in listdir(os.path.dirname(path)):
             data = shared.readfile(fn, silent=True)
@@ -382,12 +380,15 @@ def initialize():
 def register_page(page: ExtraNetworksPage):
     # registers extra networks page for the UI; recommend doing it in on_before_ui() callback for extensions
     debug(f'EN register-page: {page}')
+    if page in shared.extra_networks:
+        debug(f'EN register-page: {page} already registered')
+        return
     shared.extra_networks.append(page)
-    allowed_dirs.clear()
-    for pg in shared.extra_networks:
-        for folder in pg.allowed_directories_for_previews():
-            if folder not in allowed_dirs:
-                allowed_dirs.append(os.path.abspath(folder))
+    # allowed_dirs.clear()
+    # for pg in shared.extra_networks:
+    for folder in page.allowed_directories_for_previews():
+        if folder not in allowed_dirs:
+            allowed_dirs.append(os.path.abspath(folder))
 
 
 def register_pages():
@@ -396,6 +397,7 @@ def register_pages():
     from modules.ui_extra_networks_checkpoints import ExtraNetworksPageCheckpoints
     from modules.ui_extra_networks_styles import ExtraNetworksPageStyles
     from modules.ui_extra_networks_vae import ExtraNetworksPageVAEs
+    debug('EN register-pages')
     register_page(ExtraNetworksPageCheckpoints())
     register_page(ExtraNetworksPageStyles())
     register_page(ExtraNetworksPageTextualInversion())
@@ -463,6 +465,10 @@ def create_ui(container, button_parent, tabname, skip_indexing = False):
     ui.tabs = gr.Tabs(elem_id=tabname+"_extra_tabs")
     ui.button_details = gr.Button('Details', elem_id=tabname+"_extra_details_btn", visible=False)
     state = {}
+    if shared.cmd_opts.profile:
+        import cProfile
+        pr = cProfile.Profile()
+        pr.enable()
 
     def get_item(state, params = None):
         if params is not None and type(params) == dict:
@@ -552,21 +558,25 @@ def create_ui(container, button_parent, tabname, skip_indexing = False):
         if ui.tabname == 'txt2img': # refresh only once
             global refresh_time # pylint: disable=global-statement
             refresh_time = time.time()
-        threads = []
-        for page in get_pages():
-            if os.environ.get('SD_EN_DEBUG', None) is not None:
-                threads.append(threading.Thread(target=page.create_items, args=[ui.tabname]))
-                threads[-1].start()
-            else:
-                page.create_items(ui.tabname)
-        for thread in threads:
-            thread.join()
+        if not skip_indexing:
+            threads = []
+            for page in get_pages():
+                if os.environ.get('SD_EN_DEBUG', None) is not None:
+                    threads.append(threading.Thread(target=page.create_items, args=[ui.tabname]))
+                    threads[-1].start()
+                else:
+                    page.create_items(ui.tabname)
+            for thread in threads:
+                thread.join()
         for page in get_pages():
             page.create_page(ui.tabname, skip_indexing)
             with gr.Tab(page.title, id=page.title.lower().replace(" ", "_"), elem_classes="extra-networks-tab") as tab:
                 page_html = gr.HTML(page.html, elem_id=f'{tabname}{page.name}_extra_page', elem_classes="extra-networks-page")
                 ui.pages.append(page_html)
                 tab.select(ui_tab_change, _js="getENActivePage", inputs=[ui.button_details], outputs=[ui.button_scan, ui.button_save, ui.button_model])
+    if shared.cmd_opts.profile:
+        errors.profile(pr, 'ExtraNetworks')
+        pr.disable()
         # ui.tabs.change(fn=ui_tab_change, inputs=[], outputs=[ui.button_scan, ui.button_save])
 
     def fn_save_img(image):
@@ -787,21 +797,25 @@ def create_ui(container, button_parent, tabname, skip_indexing = False):
             prompt = ''
         params = generation_parameters_copypaste.parse_generation_parameters(prompt)
         fn = os.path.join(shared.opts.styles_dir, os.path.splitext(name)[0] + '.json')
+        prompt = params.get('Prompt', '')
         item = {
-            "type": 'Style',
             "name": name,
-            "title": name,
-            "filename": fn,
-            "search_term": None,
-            "preview": None,
             "description": '',
-            "prompt": params.get('Prompt', ''),
+            "prompt": prompt,
             "negative": params.get('Negative prompt', ''),
             "extra": '',
-            "local_preview": None,
+            # "type": 'Style',
+            # "title": name,
+            # "filename": fn,
+            # "search_term": None,
+            # "preview": None,
+            # "local_preview": None,
         }
         shared.writefile(item, fn, silent=True)
-        shared.log.debug(f"Extra network quick save style: item={item['name']} filename='{fn}'")
+        if len(prompt) > 0:
+            shared.log.debug(f"Extra network quick save style: item={name} filename='{fn}'")
+        else:
+            shared.log.warning(f"Extra network quick save model: item={name} filename='{fn}' prompt is empty")
 
     def ui_sort_cards(msg):
         shared.log.debug(f'Extra networks: {msg}')
