@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_gradio_call
 
-from modules import sd_hijack, sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, ui_loadsave, ui_train, ui_models, ui_interrogate
+from modules import sd_hijack, sd_models, script_callbacks, ui_extensions, deepbooru, extra_networks, ui_common, ui_postprocessing, ui_loadsave, ui_train, ui_models, ui_interrogate, modelloader
 from modules.ui_components import FormRow, FormGroup, ToolButton, FormHTML
 from modules.paths import script_path, data_path
 from modules.shared import opts, cmd_opts
@@ -166,16 +166,16 @@ def create_batch_inputs(tab):
     return batch_count, batch_size
 
 
-def create_seed_inputs(tab):
+def create_seed_inputs(tab, reuse_visible=True):
     with gr.Accordion(open=False, label="Seed", elem_id=f"{tab}_seed_group", elem_classes=["small-accordion"]):
         with FormRow(elem_id=f"{tab}_seed_row", variant="compact"):
             seed = gr.Number(label='Initial seed', value=-1, elem_id=f"{tab}_seed", container=True)
             random_seed = ToolButton(symbols.random, elem_id=f"{tab}_random_seed", label='Random seed')
-            reuse_seed = ToolButton(symbols.reuse, elem_id=f"{tab}_reuse_seed", label='Reuse seed')
+            reuse_seed = ToolButton(symbols.reuse, elem_id=f"{tab}_reuse_seed", label='Reuse seed', visible=reuse_visible)
         with FormRow(visible=True, elem_id=f"{tab}_subseed_row", variant="compact"):
             subseed = gr.Number(label='Variation', value=-1, elem_id=f"{tab}_subseed", container=True)
             random_subseed = ToolButton(symbols.random, elem_id=f"{tab}_random_subseed")
-            reuse_subseed = ToolButton(symbols.reuse, elem_id=f"{tab}_reuse_subseed")
+            reuse_subseed = ToolButton(symbols.reuse, elem_id=f"{tab}_reuse_subseed", visible=reuse_visible)
             subseed_strength = gr.Slider(label='Variation strength', value=0.0, minimum=0, maximum=1, step=0.01, elem_id=f"{tab}_subseed_strength")
         with FormRow(visible=False):
             seed_resize_from_w = gr.Slider(minimum=0, maximum=4096, step=8, label="Resize seed from width", value=0, elem_id=f"{tab}_seed_resize_from_w")
@@ -215,41 +215,42 @@ def create_advanced_inputs(tab):
     return cfg_scale, clip_skip, image_cfg_scale, diffusers_guidance_rescale, full_quality, restore_faces, tiling, hdr_clamp, hdr_boundary, hdr_threshold, hdr_center, hdr_channel_shift, hdr_full_shift, hdr_maximize, hdr_max_center, hdr_max_boundry
 
 
-def create_resize_inputs(tab, images):
+def create_resize_inputs(tab, images, time_selector=False, scale_visible=True):
     dummy_component = gr.Number(visible=False, value=0)
     with gr.Accordion(open=False, label="Resize", elem_classes=["small-accordion"], elem_id=f"{tab}_resize_group"):
         with gr.Row():
             resize_mode = gr.Radio(label="Resize mode", elem_id=f"{tab}_resize_mode", choices=modules.shared.resize_modes, type="index", value="None")
+            resize_time = gr.Radio(label="Resize order", elem_id=f"{tab}_resize_order", choices=['Before', 'After'], value="Before", visible=time_selector)
         with gr.Row():
             resize_name = gr.Dropdown(label="Resize method", elem_id=f"{tab}_resize_name", choices=[x.name for x in modules.shared.sd_upscalers], value=opts.upscaler_for_img2img)
+            create_refresh_button(resize_name, modelloader.load_upscalers, lambda: {"choices": modelloader.load_upscalers()}, 'refresh_upscalers')
 
         with FormRow(visible=True) as _resize_group:
-            with gr.Column(elem_id=f"{tab}_column_size", scale=4):
+            with gr.Column(elem_id=f"{tab}_column_size"):
                 selected_scale_tab = gr.State(value=0) # pylint: disable=abstract-class-instantiated
                 with gr.Tabs():
                     with gr.Tab(label="Resize to") as tab_scale_to:
                         with FormRow():
-                            with gr.Column(elem_id=f"{tab}_column_size", scale=4):
+                            with gr.Column(elem_id=f"{tab}_column_size"):
                                 with FormRow():
-                                    width = gr.Slider(minimum=64, maximum=4096, step=8, label="Width", value=512, elem_id=f"{tab}_width")
-                                    height = gr.Slider(minimum=64, maximum=4096, step=8, label="Height", value=512, elem_id=f"{tab}_height")
-                            with gr.Column(elem_id=f"{tab}_column_dim", scale=1, elem_classes="dimensions-tools"):
-                                with FormRow():
+                                    width = gr.Slider(minimum=64, maximum=8192, step=8, label="Width", value=512, elem_id=f"{tab}_width")
+                                    height = gr.Slider(minimum=64, maximum=8192, step=8, label="Height", value=512, elem_id=f"{tab}_height")
                                     res_switch_btn = ToolButton(value=symbols.switch, elem_id=f"{tab}_res_switch_btn")
                                     res_switch_btn.click(lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
                                     detect_image_size_btn = ToolButton(value=symbols.detect, elem_id=f"{tab}_detect_image_size_btn")
                                     detect_image_size_btn.click(fn=lambda w, h, _: (w or gr.update(), h or gr.update()), _js="currentImg2imgSourceResolution", inputs=[dummy_component, dummy_component, dummy_component], outputs=[width, height], show_progress=False)
 
                     with gr.Tab(label="Resize by") as tab_scale_by:
-                        scale_by = gr.Slider(minimum=0.05, maximum=4.0, step=0.05, label="Scale", value=1.0, elem_id=f"{tab}_scale")
-                        with FormRow():
-                            scale_by_html = FormHTML(resize_from_to_html(0, 0, 0.0), elem_id=f"{tab}_scale_resolution_preview")
-                            gr.Slider(label="Unused", elem_id=f"{tab}_unused_scale_by_slider")
-                            button_update_resize_to = gr.Button(visible=False, elem_id=f"{tab}_update_resize_to")
+                        scale_by = gr.Slider(minimum=0.05, maximum=8.0, step=0.05, label="Scale", value=1.0, elem_id=f"{tab}_scale")
+                        if scale_visible:
+                            with FormRow():
+                                scale_by_html = FormHTML(resize_from_to_html(0, 0, 0.0), elem_id=f"{tab}_scale_resolution_preview")
+                                gr.Slider(label="Unused", elem_id=f"{tab}_unused_scale_by_slider")
+                                button_update_resize_to = gr.Button(visible=False, elem_id=f"{tab}_update_resize_to")
 
-                    on_change_args = dict(fn=resize_from_to_html, _js="currentImg2imgSourceResolution", inputs=[dummy_component, dummy_component, scale_by], outputs=scale_by_html, show_progress=False)
-                    scale_by.release(**on_change_args)
-                    button_update_resize_to.click(**on_change_args)
+                            on_change_args = dict(fn=resize_from_to_html, _js="currentImg2imgSourceResolution", inputs=[dummy_component, dummy_component, scale_by], outputs=scale_by_html, show_progress=False)
+                            scale_by.release(**on_change_args)
+                            button_update_resize_to.click(**on_change_args)
 
                     for component in images:
                         component.change(fn=lambda: None, _js="updateImg2imgResizeToTextAfterChangingImage", inputs=[], outputs=[], show_progress=False)
@@ -257,7 +258,7 @@ def create_resize_inputs(tab, images):
             tab_scale_to.select(fn=lambda: 0, inputs=[], outputs=[selected_scale_tab])
             tab_scale_by.select(fn=lambda: 1, inputs=[], outputs=[selected_scale_tab])
             # resize_mode.change(fn=lambda x: gr.update(visible=x != 0), inputs=[resize_mode], outputs=[_resize_group])
-    return resize_mode, resize_name, width, height, scale_by, selected_scale_tab
+    return resize_mode, resize_name, width, height, scale_by, selected_scale_tab, resize_time
 
 
 def connect_clear_prompt(button): # pylint: disable=unused-argument
@@ -268,11 +269,13 @@ def connect_reuse_seed(seed: gr.Number, reuse_seed: gr.Button, generation_info: 
     """ Connects a 'reuse (sub)seed' button's click event so that it copies last used
         (sub)seed value from generation info the to the seed field. If copying subseed and subseed strength
         was 0, i.e. no variation seed was used, it copies the normal seed value instead."""
-    def copy_seed(gen_info_string: str, index):
+    def copy_seed(gen_info_string: str, index: int):
         res = -1
         try:
             gen_info = json.loads(gen_info_string)
+            log.debug(f'Reuse: info={gen_info}')
             index -= gen_info.get('index_of_first_image', 0)
+            index = int(index)
 
             if is_subseed and gen_info.get('subseed_strength', 0) > 0:
                 all_subseeds = gen_info.get('all_subseeds', [-1])
@@ -363,8 +366,9 @@ def create_toprow(is_img2img: bool = False, id_part: str = None):
                 negative_token_button = gr.Button(visible=False, elem_id=f"{id_part}_negative_token_button")
             with gr.Row(elem_id=f"{id_part}_styles_row"):
                 styles = gr.Dropdown(label="Styles", elem_id=f"{id_part}_styles", choices=[style.name for style in modules.shared.prompt_styles.styles.values()], value=[], multiselect=True)
-                styles_btn_refresh = ToolButton(symbols.refresh, elem_id=f"{id_part}_styles_refresh", visible=True)
-                styles_btn_refresh.click(fn=lambda: gr.update(choices=[style.name for style in modules.shared.prompt_styles.styles.values()]), inputs=[], outputs=[styles])
+                _styles_btn_refresh = create_refresh_button(styles, modules.shared.prompt_styles.reload, lambda: {"choices": list(modules.shared.prompt_styles.styles)}, f"{id_part}_styles_refresh")
+                # styles_btn_refresh = ToolButton(symbols.refresh, elem_id=f"{id_part}_styles_refresh", visible=True)
+                # styles_btn_refresh.click(fn=lambda: gr.update(choices=[style.name for style in modules.shared.prompt_styles.styles.values()]), inputs=[], outputs=[styles])
                 styles_btn_select = gr.Button('Select', elem_id=f"{id_part}_styles_select", visible=False)
                 styles_btn_select.click(_js="applyStyles", fn=parse_style, inputs=[styles], outputs=[styles])
                 styles_btn_apply = ToolButton(symbols.apply, elem_id=f"{id_part}_extra_apply", visible=False)
@@ -637,7 +641,8 @@ def create_ui(startup_timer = None):
                 *modules.scripts.scripts_txt2img.infotext_fields
             ]
             parameters_copypaste.add_paste_fields("txt2img", None, txt2img_paste_fields, override_settings)
-            parameters_copypaste.register_paste_params_button(parameters_copypaste.ParamBinding(paste_button=txt2img_paste, tabname="txt2img", source_text_component=txt2img_prompt, source_image_component=None))
+            txt2img_bindings = parameters_copypaste.ParamBinding(paste_button=txt2img_paste, tabname="txt2img", source_text_component=txt2img_prompt, source_image_component=None)
+            parameters_copypaste.register_paste_params_button(txt2img_bindings)
 
             txt2img_token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[txt2img_prompt, steps], outputs=[txt2img_token_counter])
             txt2img_negative_token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[txt2img_negative_prompt, steps], outputs=[txt2img_negative_token_counter])
@@ -731,7 +736,7 @@ def create_ui(startup_timer = None):
                 with FormGroup(elem_classes="settings-accordion"):
 
                     steps, sampler_index = create_sampler_inputs('img2img')
-                    resize_mode, resize_name, width, height, scale_by, selected_scale_tab = create_resize_inputs('img2img', [init_img, sketch])
+                    resize_mode, resize_name, width, height, scale_by, selected_scale_tab, _resize_time = create_resize_inputs('img2img', [init_img, sketch])
                     batch_count, batch_size = create_batch_inputs('img2img')
                     seed, reuse_seed, subseed, reuse_subseed, subseed_strength, seed_resize_from_h, seed_resize_from_w = create_seed_inputs('img2img')
 
@@ -892,9 +897,8 @@ def create_ui(startup_timer = None):
             ]
             parameters_copypaste.add_paste_fields("img2img", init_img, img2img_paste_fields, override_settings)
             parameters_copypaste.add_paste_fields("inpaint", init_img_with_mask, img2img_paste_fields, override_settings)
-            parameters_copypaste.register_paste_params_button(parameters_copypaste.ParamBinding(
-                paste_button=img2img_paste, tabname="img2img", source_text_component=img2img_prompt, source_image_component=None,
-            ))
+            img2img_bindings = parameters_copypaste.ParamBinding(paste_button=img2img_paste, tabname="img2img", source_text_component=img2img_prompt, source_image_component=None)
+            parameters_copypaste.register_paste_params_button(img2img_bindings)
 
     timer.startup.record("ui-img2img")
 
@@ -1149,6 +1153,7 @@ def create_ui(startup_timer = None):
                 # if label in modules.shared.opts.hidden_tabs or label == '':
                 #    continue
                 with gr.TabItem(label, id=ifid, elem_id=f"tab_{ifid}"):
+                    # log.debug(f'UI render: id={ifid}')
                     interface.render()
             for interface, _label, ifid in interfaces:
                 if interface is None:
@@ -1206,7 +1211,6 @@ def create_ui(startup_timer = None):
         )
 
         def reference_submit(model):
-            from modules import modelloader
             loaded = modelloader.load_reference(model)
             if loaded:
                 return model if loaded else opts.sd_model_checkpoint
