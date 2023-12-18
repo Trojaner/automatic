@@ -17,7 +17,7 @@ from modules.processing import StableDiffusionProcessing, create_random_tensors
 import modules.prompt_parser_diffusers as prompt_parser_diffusers
 from modules.sd_hijack_hypertile import hypertile_set
 from modules.processing_correction import correction_callback
-from modules.onnx import OnnxStableDiffusionPipeline
+from modules.onnx_pipelines import OnnxStableDiffusionPipeline
 
 
 def process_diffusers(p: StableDiffusionProcessing, seeds, prompts, negative_prompts):
