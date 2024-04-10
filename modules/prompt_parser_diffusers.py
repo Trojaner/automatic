@@ -101,6 +101,9 @@ def encode_prompts(pipe, p, prompts: list, negative_prompts: list, steps: int, c
     if 'StableDiffusion' not in pipe.__class__.__name__ and 'DemoFusion':
         shared.log.warning(f"Prompt parser not supported: {pipe.__class__.__name__}")
         return None, None, None, None
+    elif p.prompt_embeds is not None:
+        # embeds already processed by a script like ELLA
+        return
     else:
         t0 = time.time()
         positive_schedule, scheduled = get_prompt_schedule(prompts[0], steps)

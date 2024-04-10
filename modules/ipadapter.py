@@ -71,7 +71,7 @@ def get_scales(adapter_scales, adapter_images):
 
 def unapply(pipe): # pylint: disable=arguments-differ
     try:
-        if hasattr(pipe, 'set_ip_adapter_scale'):
+        if hasattr(pipe, 'set_ip_adapter_scale') and hasattr(shared.sd_model.unet, 'attn_processors'):
             pipe.set_ip_adapter_scale(0)
         if hasattr(pipe, 'unet') and hasattr(pipe.unet, 'config')and pipe.unet.config.encoder_hid_dim_type == 'ip_image_proj':
             pipe.unet.encoder_hid_proj = None
